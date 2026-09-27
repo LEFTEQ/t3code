@@ -1,4 +1,5 @@
 project: t3code
+source: native
 
 resources:
   workspace: standard
