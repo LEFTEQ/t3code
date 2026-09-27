@@ -17,7 +17,9 @@ apps:
   source:
     source_only: true
     sync: .
-    provision: mise exec node@24.20.0 -- node_modules/.bin/vp run --filter @t3tools/web build
+    provision: >-
+      mise exec node@24.20.0 -- corepack pnpm install --frozen-lockfile &&
+      mise exec node@24.20.0 -- node_modules/.bin/vp run --filter @t3tools/web build
     deps:
       key:
         - pnpm-lock.yaml
