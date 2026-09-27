@@ -203,6 +203,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
             provider: "claude",
             settings: claudeSettings,
             cwd,
+            isolatedCwd: operation === "generateThreadTitle",
             command: claudeSettings.binaryPath || "claude",
             args: [
               "-p",

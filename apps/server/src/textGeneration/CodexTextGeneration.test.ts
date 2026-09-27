@@ -84,6 +84,8 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         '  } else if (args[index] === "--output-last-message") {',
         "    index += 1;",
         "    outputPath = args[index] ?? null;",
+        '  } else if (args[index] === "--output-schema") {',
+        "    JSON.parse(NodeFS.readFileSync(args[++index], 'utf8'));",
         "  }",
         "}",
         "const chunks = [];",
@@ -135,6 +137,8 @@ function withFakeCodexEnv<A, E, R>(
     launchArgs?: string;
     environment?: NodeJS.ProcessEnv;
     models?: ReadonlyArray<string>;
+    executionTarget?: "host" | "devbox";
+    accountSource?: "provider" | "switcheroo";
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -142,10 +146,37 @@ function withFakeCodexEnv<A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-codex-text-" });
     const codexPath = yield* makeFakeCodexBinary(tempDir, input);
-    const config = decodeCodexSettings({ binaryPath: codexPath, launchArgs: input.launchArgs });
+    const path = yield* Path.Path;
+    const binDir = path.join(tempDir, "bin");
+    const remote = input.executionTarget === "devbox" || input.accountSource === "switcheroo";
+    for (const name of remote ? ["devbox", "switcheroo"] : []) {
+      writeFakeCli({
+        directory: binDir,
+        name,
+        source: `
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+const command = args.slice(args.indexOf("--") + 1);
+const cwd = args.includes("--cwd") ? args[args.indexOf("--cwd") + 1] : process.cwd();
+process.exitCode = spawnSync(command[0], command.slice(1), { cwd, stdio: "inherit" }).status ?? 1;
+`,
+      });
+    }
+    const config = decodeCodexSettings({
+      binaryPath: codexPath,
+      launchArgs: input.launchArgs,
+      executionTarget: input.executionTarget ?? "host",
+      accountSource: input.accountSource ?? "provider",
+    });
     const textGeneration = yield* makeCodexTextGeneration(
       config,
-      input.environment,
+      remote
+        ? {
+            ...process.env,
+            ...input.environment,
+            PATH: `${binDir}${path.sep === "\\" ? ";" : ":"}${input.environment?.PATH ?? process.env.PATH ?? ""}`,
+          }
+        : input.environment,
       Effect.succeed(
         (input.models ?? []).map((slug) => ({
           slug,
@@ -160,6 +191,24 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
+  it.effect("reads the schema and returns output through Devbox and Switcheroo wrappers", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Remote title" }),
+        executionTarget: "devbox",
+        accountSource: "switcheroo",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe remote work",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.title).toBe("Remote title");
+        }),
+    ),
+  );
   for (const selectedModel of ["gpt-5.6-luna", "openai.gpt-5.6-luna"]) {
     it.effect(`dispatches the qualified live model for ${selectedModel}`, () =>
       withFakeCodexEnv(

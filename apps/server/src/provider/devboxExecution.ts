@@ -8,13 +8,23 @@ export function devboxAgentCommand(input: {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly cwd: string;
+  readonly isolatedCwd?: boolean;
 }) {
   if (!NodePath.isAbsolute(input.cwd)) {
     throw new Error("Devbox agent execution requires an absolute project directory on the server.");
   }
   return {
     command: "devbox",
-    args: ["ws", "agent-exec", "--cwd", input.cwd, "--", input.command, ...input.args],
+    args: [
+      "ws",
+      "agent-exec",
+      "--cwd",
+      input.cwd,
+      ...(input.isolatedCwd ? ["--isolated-cwd"] : []),
+      "--",
+      input.command,
+      ...input.args,
+    ],
   };
 }
 
@@ -31,6 +41,7 @@ export function providerExecutionCommand(input: {
   readonly args: ReadonlyArray<string>;
   readonly cwd: string;
   readonly settings: ProviderExecutionSettings;
+  readonly isolatedCwd?: boolean;
 }) {
   const command =
     input.settings.accountSource === "switcheroo"
@@ -51,7 +62,7 @@ export function providerExecutionCommand(input: {
         }
       : { command: input.command, args: [...input.args] };
   return input.settings.executionTarget === "devbox"
-    ? devboxAgentCommand({ ...command, cwd: input.cwd })
+    ? devboxAgentCommand({ ...command, cwd: input.cwd, isolatedCwd: input.isolatedCwd ?? false })
     : command;
 }
 

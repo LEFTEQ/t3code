@@ -137,6 +137,24 @@ function withFakeClaudeEnv<A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-claude-text-" });
     const binDir = yield* makeFakeClaudeBinary(tempDir);
+    if (input.claudeConfig?.executionTarget === "devbox") {
+      writeFakeCli({
+        directory: binDir,
+        name: "devbox",
+        source: `
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+const isolated = args.includes("--isolated-cwd");
+const cwd = isolated ? mkdtempSync(join(tmpdir(), "admitted-title-")) : args[args.indexOf("--cwd") + 1];
+const command = args.slice(args.indexOf("--") + 1);
+try { process.exitCode = spawnSync(command[0], command.slice(1), { cwd, stdio: "inherit" }).status ?? 1; }
+finally { if (isolated) rmSync(cwd, { recursive: true }); }
+`,
+      });
+    }
     const pathDelimiter = (yield* isHostWindows) ? ";" : ":";
     const previousPath = process.env.PATH;
     const previousOutput = process.env.T3_FAKE_CLAUDE_OUTPUT;
@@ -373,39 +391,42 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
       ),
   );
 
-  it.effect(
-    "generates thread titles outside the project with tools, skills, and hooks disabled",
-    () =>
-      withFakeClaudeEnv(
-        {
-          output: JSON.stringify({
-            structured_output: {
-              title:
-                '  "Reconnect failures after restart because the session state does not recover"  ',
-            },
-          }),
-          cwdMustNotBe: process.cwd(),
-          stdinMustContain: "/call-script",
-        },
-        (textGeneration) =>
-          Effect.gen(function* () {
-            const generated = yield* textGeneration.generateThreadTitle({
-              cwd: process.cwd(),
-              message: "/call-script",
-              modelSelection: {
-                instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+  for (const executionTarget of ["host", "devbox"] as const) {
+    it.effect(
+      `generates ${executionTarget} thread titles outside the project with tools, skills, and hooks disabled`,
+      () =>
+        withFakeClaudeEnv(
+          {
+            output: JSON.stringify({
+              structured_output: {
+                title:
+                  '  "Reconnect failures after restart because the session state does not recover"  ',
               },
-            });
+            }),
+            cwdMustNotBe: process.cwd(),
+            claudeConfig: { executionTarget },
+            stdinMustContain: "/call-script",
+          },
+          (textGeneration) =>
+            Effect.gen(function* () {
+              const generated = yield* textGeneration.generateThreadTitle({
+                cwd: process.cwd(),
+                message: "/call-script",
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("claudeAgent"),
+                  model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+                },
+              });
 
-            expect(generated.title).toBe(
-              sanitizeThreadTitle(
-                '"Reconnect failures after restart because the session state does not recover"',
-              ),
-            );
-          }),
-      ),
-  );
+              expect(generated.title).toBe(
+                sanitizeThreadTitle(
+                  '"Reconnect failures after restart because the session state does not recover"',
+                ),
+              );
+            }),
+        ),
+    );
+  }
 
   it.effect("generates branch names from skill prompts without executable capabilities", () =>
     withFakeClaudeEnv(
