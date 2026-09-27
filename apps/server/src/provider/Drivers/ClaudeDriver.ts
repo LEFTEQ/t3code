@@ -52,6 +52,7 @@ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeCachedProviderMaintenanceResolution,
+  makeManualOnlyProviderMaintenanceCapabilities,
   makePackageManagedProviderMaintenanceResolver,
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
@@ -67,6 +68,7 @@ import {
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import { discoverClaudeSkills } from "./ClaudeSkills.ts";
+import { providerExecutionIdentity } from "../providerExecutionIdentity.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
@@ -133,19 +135,28 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         enabled,
         binaryPath: expandHomePath(config.binaryPath),
       } satisfies ClaudeSettings;
-      const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
-        resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-          binaryPath: effectiveConfig.binaryPath,
-          env: processEnv,
-        }).pipe(
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        ),
-      );
-      const continuationGroupKey = yield* makeClaudeContinuationGroupKey(
+      const resolveMaintenance =
+        effectiveConfig.accountSource === "switcheroo"
+          ? () =>
+              Effect.succeed(
+                makeManualOnlyProviderMaintenanceCapabilities({
+                  provider: DRIVER_KIND,
+                  packageName: null,
+                }),
+              )
+          : yield* makeCachedProviderMaintenanceResolution(
+              resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
+                binaryPath: effectiveConfig.binaryPath,
+                env: processEnv,
+              }).pipe(
+                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              ),
+            );
+      const continuationGroupKey = providerExecutionIdentity(
+        yield* makeClaudeContinuationGroupKey(effectiveConfig, processEnv),
         effectiveConfig,
-        processEnv,
       );
       const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
       const accountConfigPath = yield* ClaudeResetCredits.claudeAccountConfigPath(
@@ -259,7 +270,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         ),
       );
       const snapshotForCwd = (cwd: string) =>
-        !effectiveConfig.enabled
+        !effectiveConfig.enabled || effectiveConfig.accountSource === "switcheroo"
           ? snapshot.getSnapshot
           : Effect.all([
               snapshot.getSnapshot,
@@ -274,63 +285,72 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       // login, one request id kept until Claude answers (a cooldown or rate
       // limit is an answer), then a re-probe.
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
-        Effect.gen(function* () {
-          const current = yield* snapshot.getSnapshot;
-          const grantId = current.usageLimits?.resetCredits?.nextCreditId;
-          if (!grantId || !current.version) return "noCredit" as const;
-          const version = current.version;
-          return yield* resetCreditCoordinator.redeem(
-            configDir,
-            (requestId) =>
-              ClaudeResetCredits.consumeClaudeResetCredit({
-                configDir,
-                accountConfigPath,
-                version,
-                grantId,
-                requestId,
-              }),
-            ClaudeResetCredits.isSettledClaudeResetCreditFailure,
-          );
-        }).pipe(
-          Effect.provideService(HttpClient.HttpClient, httpClient),
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-          Effect.mapError(
-            (cause) =>
+        effectiveConfig.accountSource === "switcheroo"
+          ? Effect.fail(
               new ProviderDriverError({
                 driver: DRIVER_KIND,
                 instanceId,
                 detail:
-                  cause._tag === "ClaudeResetCreditError"
-                    ? cause.message
-                    : "Claude could not redeem the reset.",
-                cause,
+                  "Switcheroo manages this account. Manage enrollment and credits in the remote Switcheroo service.",
               }),
-          ),
-          // Re-probe after any answer, but only a reset claims the limits
-          // changed, so only a reset reports an unconfirmed refresh.
-          Effect.tap((outcome) =>
-            Effect.gen(function* () {
-              const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;
-              yield* Cache.invalidateAll(capabilitiesProbeCache);
-              const refreshed = yield* snapshot.refresh;
-              const after = refreshed.usageLimits?.checkedAt;
-              if (
-                outcome === "reset" &&
-                (after === undefined ||
-                  after === before ||
-                  refreshed.usageLimits?.unavailable?.reason === "probeFailed")
-              ) {
-                return yield* new ProviderDriverError({
-                  driver: DRIVER_KIND,
-                  instanceId,
-                  detail:
-                    "The reset was applied, but Claude could not confirm the new limits. Refresh to check.",
-                });
-              }
-            }),
-          ),
-        );
+            )
+          : Effect.gen(function* () {
+              const current = yield* snapshot.getSnapshot;
+              const grantId = current.usageLimits?.resetCredits?.nextCreditId;
+              if (!grantId || !current.version) return "noCredit" as const;
+              const version = current.version;
+              return yield* resetCreditCoordinator.redeem(
+                configDir,
+                (requestId) =>
+                  ClaudeResetCredits.consumeClaudeResetCredit({
+                    configDir,
+                    accountConfigPath,
+                    version,
+                    grantId,
+                    requestId,
+                  }),
+                ClaudeResetCredits.isSettledClaudeResetCreditFailure,
+              );
+            }).pipe(
+              Effect.provideService(HttpClient.HttpClient, httpClient),
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+              Effect.mapError(
+                (cause) =>
+                  new ProviderDriverError({
+                    driver: DRIVER_KIND,
+                    instanceId,
+                    detail:
+                      cause._tag === "ClaudeResetCreditError"
+                        ? cause.message
+                        : "Claude could not redeem the reset.",
+                    cause,
+                  }),
+              ),
+              // Re-probe after any answer, but only a reset claims the limits
+              // changed, so only a reset reports an unconfirmed refresh.
+              Effect.tap((outcome) =>
+                Effect.gen(function* () {
+                  const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;
+                  yield* Cache.invalidateAll(capabilitiesProbeCache);
+                  const refreshed = yield* snapshot.refresh;
+                  const after = refreshed.usageLimits?.checkedAt;
+                  if (
+                    outcome === "reset" &&
+                    (after === undefined ||
+                      after === before ||
+                      refreshed.usageLimits?.unavailable?.reason === "probeFailed")
+                  ) {
+                    return yield* new ProviderDriverError({
+                      driver: DRIVER_KIND,
+                      instanceId,
+                      detail:
+                        "The reset was applied, but Claude could not confirm the new limits. Refresh to check.",
+                    });
+                  }
+                }),
+              ),
+            );
 
       return {
         instanceId,

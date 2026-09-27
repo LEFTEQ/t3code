@@ -13,6 +13,9 @@ describe("ProviderSettingsForm helpers", () => {
 
     expect(codex).toBeDefined();
     expect(deriveProviderSettingsFields(codex!).map((field) => field.key)).toEqual([
+      "executionTarget",
+      "accountSource",
+      "switcherooAccount",
       "binaryPath",
       "homePath",
       "shadowHomePath",
@@ -63,6 +66,9 @@ describe("ProviderSettingsForm helpers", () => {
     expect(claude).toBeDefined();
 
     expect(deriveProviderSettingsFields(claude!).map((field) => field.key)).toEqual([
+      "executionTarget",
+      "accountSource",
+      "switcherooAccount",
       "binaryPath",
       "homePath",
       "autoCompactWindow",

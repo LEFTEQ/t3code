@@ -1,0 +1,29 @@
+project: t3code
+
+resources:
+  workspace: standard
+  test: medium
+  memory: 4G
+
+apps:
+  source:
+    source_only: true
+    sync: .
+    deps:
+      key:
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - package.json
+        - apps/*/package.json
+        - infra/*/package.json
+        - packages/*/package.json
+        - oxlint-plugin-t3code/package.json
+        - scripts/package.json
+      cmd: mise exec node@24.20.0 -- corepack pnpm install --frozen-lockfile
+      profile: medium
+    sync_ignores:
+      - .env
+      - .env.*
+      - .t3
+      - .repos
+      - release

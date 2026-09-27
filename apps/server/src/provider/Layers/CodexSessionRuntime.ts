@@ -40,6 +40,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { providerExecutionCommand, type ProviderExecutionSettings } from "../devboxExecution.ts";
 import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
@@ -170,7 +171,7 @@ type CodexServiceTier = NonNullable<EffectCodexSchema.V2ThreadStartParams["servi
 type CodexThreadItem =
   EffectCodexSchema.V2ThreadReadResponse["thread"]["turns"][number]["items"][number];
 
-export interface CodexSessionRuntimeOptions {
+export interface CodexSessionRuntimeOptions extends ProviderExecutionSettings {
   readonly threadId: ThreadId;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly binaryPath: string;
@@ -1332,7 +1333,22 @@ export const makeCodexSessionRuntime = (
     };
     const extendEnv = options.environment === undefined;
     const appServerArgs = codexSessionAppServerArgs(options.appServerArgs, options.launchArgs);
-    const spawnCommand = yield* resolveSpawnCommand(options.binaryPath, appServerArgs, {
+    const launchCommand = yield* Effect.try({
+      try: () =>
+        providerExecutionCommand({
+          provider: "codex",
+          settings: options,
+          command: options.binaryPath,
+          args: appServerArgs,
+          cwd: options.cwd,
+        }),
+      catch: (cause) =>
+        new CodexErrors.CodexAppServerSpawnError({
+          command: `${options.binaryPath} app-server`,
+          cause,
+        }),
+    });
+    const spawnCommand = yield* resolveSpawnCommand(launchCommand.command, launchCommand.args, {
       env,
       extendEnv,
     });

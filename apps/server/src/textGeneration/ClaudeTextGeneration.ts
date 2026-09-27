@@ -1,3 +1,4 @@
+import { providerExecutionCommand } from "../provider/devboxExecution.ts";
 /**
  * ClaudeTextGeneration – Text generation layer using the Claude CLI.
  *
@@ -196,29 +197,39 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
                 ),
               )
           : cwd;
-      const spawnCommand = yield* resolveSpawnCommand(
-        claudeSettings.binaryPath || "claude",
-        [
-          "-p",
-          "--output-format",
-          "json",
-          "--json-schema",
-          jsonSchemaStr,
-          "--model",
-          resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
-          ...(cliEffort ? ["--effort", cliEffort] : []),
-          "--settings",
-          settingsJson,
-          // Metadata prompts need no executable capabilities, even when they contain a skill name.
-          "--tools",
-          "",
-          "--disable-slash-commands",
-          "--strict-mcp-config",
-          "--permission-mode",
-          "dontAsk",
-        ],
-        { env: claudeEnvironment },
-      );
+      const execution = yield* Effect.try({
+        try: () =>
+          providerExecutionCommand({
+            provider: "claude",
+            settings: claudeSettings,
+            cwd,
+            command: claudeSettings.binaryPath || "claude",
+            args: [
+              "-p",
+              "--output-format",
+              "json",
+              "--json-schema",
+              jsonSchemaStr,
+              "--model",
+              resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
+              ...(cliEffort ? ["--effort", cliEffort] : []),
+              "--settings",
+              settingsJson,
+              // Metadata prompts need no executable capabilities, even when they contain a skill name.
+              "--tools",
+              "",
+              "--disable-slash-commands",
+              "--strict-mcp-config",
+              "--permission-mode",
+              "dontAsk",
+            ],
+          }),
+        catch: (cause) =>
+          normalizeCliError("claude", operation, cause, "Invalid provider execution target"),
+      });
+      const spawnCommand = yield* resolveSpawnCommand(execution.command, execution.args, {
+        env: claudeEnvironment,
+      });
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: claudeEnvironment,
         cwd: workingDirectory,

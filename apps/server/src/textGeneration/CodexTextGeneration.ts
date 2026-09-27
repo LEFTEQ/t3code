@@ -1,3 +1,4 @@
+import { providerExecutionCommand } from "../provider/devboxExecution.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -193,29 +194,39 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
         DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
       const serviceTier = getCodexServiceTierOptionValue(modelSelection);
-      const spawnCommand = yield* resolveSpawnCommand(
-        codexConfig.binaryPath || "codex",
-        [
-          "exec",
-          ...codexExecLaunchArgs(launchArgs),
-          "--ephemeral",
-          "--skip-git-repo-check",
-          "-s",
-          "read-only",
-          "--model",
-          model,
-          "--config",
-          `model_reasoning_effort="${reasoningEffort}"`,
-          ...(serviceTier ? ["--config", `service_tier="${serviceTier}"`] : []),
-          "--output-schema",
-          schemaPath,
-          "--output-last-message",
-          outputPath,
-          ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
-          "-",
-        ],
-        { env: resolvedEnvironment },
-      );
+      const execution = yield* Effect.try({
+        try: () =>
+          providerExecutionCommand({
+            provider: "codex",
+            settings: codexConfig,
+            cwd,
+            command: codexConfig.binaryPath || "codex",
+            args: [
+              "exec",
+              ...codexExecLaunchArgs(launchArgs),
+              "--ephemeral",
+              "--skip-git-repo-check",
+              "-s",
+              "read-only",
+              "--model",
+              model,
+              "--config",
+              `model_reasoning_effort="${reasoningEffort}"`,
+              ...(serviceTier ? ["--config", `service_tier="${serviceTier}"`] : []),
+              "--output-schema",
+              schemaPath,
+              "--output-last-message",
+              outputPath,
+              ...imagePaths.flatMap((imagePath) => ["--image", imagePath]),
+              "-",
+            ],
+          }),
+        catch: (cause) =>
+          normalizeCliError("codex", operation, cause, "Invalid provider execution target"),
+      });
+      const spawnCommand = yield* resolveSpawnCommand(execution.command, execution.args, {
+        env: resolvedEnvironment,
+      });
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: {
           ...resolvedEnvironment,
