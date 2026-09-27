@@ -145,12 +145,13 @@ function withFakeClaudeEnv<A, E, R>(
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 const args = process.argv.slice(2);
 const isolated = args.includes("--isolated-cwd");
 const cwd = isolated ? mkdtempSync(join(tmpdir(), "admitted-title-")) : args[args.indexOf("--cwd") + 1];
 const command = args.slice(args.indexOf("--") + 1);
-try { process.exitCode = spawnSync(command[0], command.slice(1), { cwd, stdio: "inherit" }).status ?? 1; }
+const stub = join(${JSON.stringify(binDir)}, basename(command[0], ".cmd") + "-stub.mjs");
+try { process.exitCode = spawnSync(process.execPath, [stub, ...command.slice(1)], { cwd, stdio: "inherit" }).status ?? 1; }
 finally { if (isolated) rmSync(cwd, { recursive: true }); }
 `,
       });

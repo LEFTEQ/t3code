@@ -155,10 +155,12 @@ function withFakeCodexEnv<A, E, R>(
         name,
         source: `
 import { spawnSync } from "node:child_process";
+import { basename, join } from "node:path";
 const args = process.argv.slice(2);
 const command = args.slice(args.indexOf("--") + 1);
 const cwd = args.includes("--cwd") ? args[args.indexOf("--cwd") + 1] : process.cwd();
-process.exitCode = spawnSync(command[0], command.slice(1), { cwd, stdio: "inherit" }).status ?? 1;
+const stub = join(${JSON.stringify(binDir)}, basename(command[0], ".cmd") + "-stub.mjs");
+process.exitCode = spawnSync(process.execPath, [stub, ...command.slice(1)], { cwd, stdio: "inherit" }).status ?? 1;
 `,
       });
     }
