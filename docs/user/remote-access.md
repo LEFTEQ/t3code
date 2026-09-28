@@ -143,6 +143,46 @@ running is left alone.
 For Antigravity's Google callback on a remote host, see
 [remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
 
+## Devbox workspaces
+
+Connect to a T3 server running on the Devbox machine using direct pairing or
+T3 Connect. In that environment's Claude or Codex provider settings, set
+**Run agents in → Devbox workspace**, then open a project in a native Devbox
+workspace. The installed Devbox CLI must support `devbox ws agent-exec`.
+Mac-synced workspaces are not eligible: their next sync could overwrite an
+agent's changes.
+
+Registered Git worktrees can run agents and source-only Devbox commands
+(`devbox run --no-up`). App services still belong to the original workspace
+checkout; starting them from a linked worktree is refused so a branch cannot
+accidentally test another checkout's running app.
+
+This setting admits the provider through Devbox's workspace resource limits.
+It does not move a local T3 server to Devbox or copy provider credentials.
+For work to continue while your Mac is asleep, both the T3 server and provider
+authentication must operate on the always-on machine. Disconnecting a client
+then leaves the remote server in charge of the session.
+
+An open provider session keeps its workspace from being parked, including
+while its background work runs. T3 closes inactive sessions automatically.
+Choose **This server** to return a provider instance to ordinary server
+execution.
+
+### Switcheroo accounts
+
+With the dedicated Switcheroo service running on the same server, use the web
+or desktop client to choose
+**Account source → Switcheroo remote** in the Claude or Codex provider settings.
+Leave **Switcheroo account** empty for automatic selection when a session starts,
+or enter an enrolled account's name to require that account.
+
+The session stays on its selected account. If that account becomes unavailable,
+the request fails visibly; it never silently switches subscriptions. Remote
+accounts are enrolled separately from Mac accounts and stored in Onyx, so
+provider credentials do not pass through T3 settings or connected clients.
+Choose **Provider login** to return to the provider's own login. Mobile clients
+use the configured remote provider when connected to that environment.
+
 ## Manage or revoke access
 
 On the host, **Settings → Connections** lets authorized administrators create

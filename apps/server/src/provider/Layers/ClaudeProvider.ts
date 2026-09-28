@@ -37,6 +37,7 @@ import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
+import { probeSwitcherooStatus } from "../switcherooStatus.ts";
 import {
   type ClaudeScopedLimitNames,
   claudeUsageResponseToLimits,
@@ -455,6 +456,17 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         auth: { status: "unknown" },
         message: "Claude is disabled in T3 Code settings.",
       },
+    });
+  }
+
+  if (claudeSettings.accountSource === "switcheroo") {
+    return buildServerProvider({
+      presentation: CLAUDE_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models: allModels,
+      slashCommands: [COMPACT_SLASH_COMMAND],
+      probe: yield* probeSwitcherooStatus("claude", claudeSettings, checkedAt, resolvedEnvironment),
     });
   }
 

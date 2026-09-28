@@ -574,8 +574,51 @@ function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fields>(
   );
 }
 
+const ProviderExecutionTarget = Schema.Literals(["host", "devbox"]);
+const ProviderAccountSource = Schema.Literals(["provider", "switcheroo"]);
+const providerAccountSettings = {
+  accountSource: Schema.optionalKey(ProviderAccountSource).pipe(
+    Schema.annotateKey({
+      title: "Account source",
+      description: "Switcheroo selects an account through its dedicated service on this server.",
+      providerSettingsForm: {
+        control: "select",
+        options: [
+          { value: "provider", label: "Provider login" },
+          { value: "switcheroo", label: "Switcheroo remote" },
+        ],
+        clearWhenEmpty: "omit",
+      },
+    }),
+  ),
+  switcherooAccount: Schema.optionalKey(TrimmedString).pipe(
+    Schema.annotateKey({
+      title: "Switcheroo account",
+      description:
+        "Leave empty for automatic selection at session launch. Used with Switcheroo remote.",
+      providerSettingsForm: { placeholder: "Automatic", clearWhenEmpty: "omit" },
+    }),
+  ),
+};
+const providerExecutionTargetSetting = Schema.optionalKey(ProviderExecutionTarget).pipe(
+  Schema.annotateKey({
+    title: "Run agents in",
+    description: "Use Devbox for projects in a native Devbox workspace on this server.",
+    providerSettingsForm: {
+      control: "select",
+      options: [
+        { value: "host", label: "This server" },
+        { value: "devbox", label: "Devbox workspace" },
+      ],
+      clearWhenEmpty: "omit",
+    },
+  }),
+);
+
 export const CodexSettings = makeProviderSettingsSchema(
   {
+    ...providerAccountSettings,
+    executionTarget: providerExecutionTargetSetting,
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -623,7 +666,15 @@ export const CodexSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: [
+      "executionTarget",
+      "accountSource",
+      "switcherooAccount",
+      "binaryPath",
+      "homePath",
+      "shadowHomePath",
+      "launchArgs",
+    ],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
@@ -635,6 +686,8 @@ const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
+    ...providerAccountSettings,
+    executionTarget: providerExecutionTargetSetting,
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -686,7 +739,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "launchArgs"],
+    order: [
+      "executionTarget",
+      "accountSource",
+      "switcherooAccount",
+      "binaryPath",
+      "homePath",
+      "autoCompactWindow",
+      "launchArgs",
+    ],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
@@ -1392,6 +1453,9 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 const CodexSettingsPatch = Schema.Struct({
+  accountSource: Schema.optionalKey(ProviderAccountSource),
+  switcherooAccount: Schema.optionalKey(TrimmedString),
+  executionTarget: Schema.optionalKey(ProviderExecutionTarget),
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
@@ -1401,6 +1465,9 @@ const CodexSettingsPatch = Schema.Struct({
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
+  accountSource: Schema.optionalKey(ProviderAccountSource),
+  switcherooAccount: Schema.optionalKey(TrimmedString),
+  executionTarget: Schema.optionalKey(ProviderExecutionTarget),
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),

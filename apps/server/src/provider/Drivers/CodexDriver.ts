@@ -51,9 +51,11 @@ import * as ModelManifest from "../ModelManifest.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { providerExecutionIdentity } from "../providerExecutionIdentity.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeCachedProviderMaintenanceResolution,
+  makeManualOnlyProviderMaintenanceCapabilities,
   makePackageManagedProviderMaintenanceResolver,
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
@@ -132,8 +134,13 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
       const processEnv = mergeProviderInstanceEnvironment(environment);
-      const homeLayout = yield* resolveCodexHomeLayout(config);
-      const continuationIdentity = codexContinuationIdentity(homeLayout);
+      const homeLayout = yield* resolveCodexHomeLayout(
+        config.accountSource === "switcheroo" ? { ...config, shadowHomePath: "" } : config,
+      );
+      const continuationIdentity = {
+        ...codexContinuationIdentity(homeLayout),
+        continuationKey: providerExecutionIdentity(homeLayout.continuationKey, config),
+      };
       const stampIdentity = withInstanceIdentity({
         instanceId,
         driverKind: DRIVER_KIND,
@@ -158,19 +165,28 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         binaryPath: expandHomePath(config.binaryPath),
         homePath: homeLayout.effectiveHomePath ?? "",
       } satisfies CodexSettings;
-      const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
-        resolveProviderMaintenanceCapabilitiesEffect(
-          makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
-          {
-            binaryPath: effectiveConfig.binaryPath,
-            env: processEnv,
-          },
-        ).pipe(
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, pathService),
-        ),
-      );
+      const resolveMaintenance =
+        effectiveConfig.accountSource === "switcheroo"
+          ? () =>
+              Effect.succeed(
+                makeManualOnlyProviderMaintenanceCapabilities({
+                  provider: DRIVER_KIND,
+                  packageName: null,
+                }),
+              )
+          : yield* makeCachedProviderMaintenanceResolution(
+              resolveProviderMaintenanceCapabilitiesEffect(
+                makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
+                {
+                  binaryPath: effectiveConfig.binaryPath,
+                  env: processEnv,
+                },
+              ).pipe(
+                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, pathService),
+              ),
+            );
 
       // Build a managed snapshot whose settings never change — mutations come
       // in as instance rebuilds from the registry rather than in-place
@@ -241,7 +257,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       });
       const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv, models);
       const snapshotForCwd = (cwd: string) =>
-        !effectiveConfig.enabled
+        !effectiveConfig.enabled || effectiveConfig.accountSource === "switcheroo"
           ? snapshot.getSnapshot
           : Effect.all([
               snapshot.getSnapshot,
@@ -278,61 +294,70 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // the common home. The continuation key would conflate the two.
       const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
-        resetCreditCoordinator
-          .redeem(accountKey, (idempotencyKey) =>
-            Effect.gen(function* () {
-              const { client } = yield* withCodexAppServerClient({
-                binaryPath: effectiveConfig.binaryPath,
-                homePath: effectiveConfig.homePath,
-                launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
-                // Account-level request; any directory serves, same as the status probe.
-                cwd: process.cwd(),
-                environment: processEnv,
-              });
-              const response = yield* client.request("account/rateLimitResetCredit/consume", {
-                idempotencyKey,
-              });
-              return response.outcome;
-            }).pipe(Effect.scoped, Effect.timeout("20 seconds")),
-          )
-          .pipe(
-            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-            Effect.mapError(
-              (cause) =>
-                new ProviderDriverError({
-                  driver: DRIVER_KIND,
-                  instanceId,
-                  detail: "Codex could not redeem the reset credit.",
-                  cause,
-                }),
-            ),
-            // The windows just changed; re-probe so the snapshot says so. A
-            // failed probe republishes the pre-redemption limits rather than
-            // marking them failed, so "confirmed" means `checkedAt` moved
-            // past what was published before the redemption started. Only a
-            // reset claims the limits changed, so only a reset reports an
-            // unconfirmed refresh.
-            Effect.tap((outcome) =>
-              Effect.gen(function* () {
-                const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;
-                const refreshed = yield* snapshot.refresh;
-                const after = refreshed.usageLimits?.checkedAt;
-                if (
-                  outcome === "reset" &&
-                  (after === undefined ||
-                    after === before ||
-                    refreshed.usageLimits?.unavailable?.reason === "probeFailed")
-                ) {
-                  return yield* new ProviderDriverError({
-                    driver: DRIVER_KIND,
-                    instanceId,
-                    detail:
-                      "The reset was applied, but Codex could not confirm the new limits. Refresh to check.",
-                  });
-                }
+        effectiveConfig.accountSource === "switcheroo"
+          ? Effect.fail(
+              new ProviderDriverError({
+                driver: DRIVER_KIND,
+                instanceId,
+                detail:
+                  "Switcheroo manages this account. Manage enrollment and credits in the remote Switcheroo service.",
               }),
-            ),
-          );
+            )
+          : resetCreditCoordinator
+              .redeem(accountKey, (idempotencyKey) =>
+                Effect.gen(function* () {
+                  const { client } = yield* withCodexAppServerClient({
+                    binaryPath: effectiveConfig.binaryPath,
+                    homePath: effectiveConfig.homePath,
+                    launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
+                    // Account-level request; any directory serves, same as the status probe.
+                    cwd: process.cwd(),
+                    environment: processEnv,
+                  });
+                  const response = yield* client.request("account/rateLimitResetCredit/consume", {
+                    idempotencyKey,
+                  });
+                  return response.outcome;
+                }).pipe(Effect.scoped, Effect.timeout("20 seconds")),
+              )
+              .pipe(
+                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderDriverError({
+                      driver: DRIVER_KIND,
+                      instanceId,
+                      detail: "Codex could not redeem the reset credit.",
+                      cause,
+                    }),
+                ),
+                // The windows just changed; re-probe so the snapshot says so. A
+                // failed probe republishes the pre-redemption limits rather than
+                // marking them failed, so "confirmed" means `checkedAt` moved
+                // past what was published before the redemption started. Only a
+                // reset claims the limits changed, so only a reset reports an
+                // unconfirmed refresh.
+                Effect.tap((outcome) =>
+                  Effect.gen(function* () {
+                    const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;
+                    const refreshed = yield* snapshot.refresh;
+                    const after = refreshed.usageLimits?.checkedAt;
+                    if (
+                      outcome === "reset" &&
+                      (after === undefined ||
+                        after === before ||
+                        refreshed.usageLimits?.unavailable?.reason === "probeFailed")
+                    ) {
+                      return yield* new ProviderDriverError({
+                        driver: DRIVER_KIND,
+                        instanceId,
+                        detail:
+                          "The reset was applied, but Codex could not confirm the new limits. Refresh to check.",
+                      });
+                    }
+                  }),
+                ),
+              );
 
       return {
         instanceId,

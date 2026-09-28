@@ -6,6 +6,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
+  CodexSettings,
   DEFAULT_SERVER_SETTINGS,
   resolveProviderInstanceEnabled,
   ServerSettings,
@@ -19,6 +20,50 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+
+describe("provider execution targets", () => {
+  it("accepts automatic or named Switcheroo accounts without changing existing login defaults", () => {
+    for (const settings of [ClaudeSettings, CodexSettings]) {
+      const decode = Schema.decodeUnknownSync(settings);
+      expect(decode({}).accountSource).toBeUndefined();
+      expect(decode({ accountSource: "switcheroo" }).switcherooAccount).toBeUndefined();
+      expect(
+        decode({ accountSource: "switcheroo", switcherooAccount: "remote-work" }),
+      ).toMatchObject({ accountSource: "switcheroo", switcherooAccount: "remote-work" });
+      expect(() => decode({ accountSource: "unknown" })).toThrow();
+    }
+    expect(
+      decodeServerSettingsPatch({
+        providers: {
+          claudeAgent: {
+            accountSource: "switcheroo",
+            switcherooAccount: "remote-work",
+          },
+        },
+      }),
+    ).toMatchObject({
+      providers: {
+        claudeAgent: {
+          accountSource: "switcheroo",
+          switcherooAccount: "remote-work",
+        },
+      },
+    });
+  });
+  it("keeps existing providers on the host and round-trips explicit Devbox selection", () => {
+    for (const decode of [
+      Schema.decodeUnknownSync(ClaudeSettings),
+      Schema.decodeUnknownSync(CodexSettings),
+    ]) {
+      expect(decode({}).executionTarget).toBeUndefined();
+      expect(decode({ executionTarget: "devbox" }).executionTarget).toBe("devbox");
+      expect(() => decode({ executionTarget: "arbitrary-command" })).toThrow();
+    }
+    expect(
+      decodeServerSettingsPatch({ providers: { codex: { executionTarget: "devbox" } } }),
+    ).toMatchObject({ providers: { codex: { executionTarget: "devbox" } } });
+  });
+});
 
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
