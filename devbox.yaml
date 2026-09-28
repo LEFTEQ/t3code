@@ -11,13 +11,14 @@ apps:
     run_in: source
     cmd: >-
       export PATH="$HOME/.bun/bin:$PATH";
-      exec mise exec node@24.20.0 -- node apps/server/src/bin.ts --host 0.0.0.0 --port {port:server} --base-dir {state}/t3 --no-browser --auto-bootstrap-project-from-cwd
+      exec mise exec node@24.20.0 gh@2.101.0 -- node apps/server/src/bin.ts --host 0.0.0.0 --port {port:server} --base-dir {state}/t3 --no-browser --auto-bootstrap-project-from-cwd
     build: mise exec node@24.20.0 -- node_modules/.bin/vp run --filter @t3tools/web build
     ports: [server]
   source:
     source_only: true
     sync: .
     provision: >-
+      mise install gh@2.101.0 &&
       mise exec node@24.20.0 -- corepack pnpm install --frozen-lockfile &&
       mise exec node@24.20.0 -- node_modules/.bin/vp run --filter @t3tools/web build
     deps:
