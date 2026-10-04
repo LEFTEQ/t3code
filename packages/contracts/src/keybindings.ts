@@ -34,6 +34,72 @@ export const MODEL_PICKER_JUMP_KEYBINDING_COMMANDS = [
 export type ModelPickerJumpKeybindingCommand =
   (typeof MODEL_PICKER_JUMP_KEYBINDING_COMMANDS)[number];
 
+export const TAB_SELECT_KEYBINDING_COMMANDS = [
+  "tab.select.1",
+  "tab.select.2",
+  "tab.select.3",
+  "tab.select.4",
+  "tab.select.5",
+  "tab.select.6",
+  "tab.select.7",
+  "tab.select.8",
+  "tab.select.last",
+] as const;
+
+export const WORKSPACE_SELECT_KEYBINDING_COMMANDS = [
+  "workspace.select.1",
+  "workspace.select.2",
+  "workspace.select.3",
+  "workspace.select.4",
+  "workspace.select.5",
+  "workspace.select.6",
+  "workspace.select.7",
+  "workspace.select.8",
+  "workspace.select.last",
+] as const;
+
+/** Commands owned by the split workspace: panes, their tabs and the workspaces holding them. */
+export const WORKSPACE_KEYBINDING_COMMANDS = [
+  "workspace.splitRight",
+  "workspace.splitDown",
+  "pane.focusLeft",
+  "pane.focusRight",
+  "pane.focusUp",
+  "pane.focusDown",
+  "pane.zoom",
+  "pane.equalize",
+  "pane.resizeLeft",
+  "pane.resizeDown",
+  "pane.resizeUp",
+  "pane.resizeRight",
+  "tab.new",
+  "tab.close",
+  "tab.reopen",
+  "tab.closeOthers",
+  "tab.previous",
+  "tab.next",
+  ...TAB_SELECT_KEYBINDING_COMMANDS,
+  "tab.moveLeft",
+  "tab.moveRight",
+  "tab.moveUp",
+  "tab.moveDown",
+  "tab.movePreviousPane",
+  "tab.moveNextPane",
+  "tab.reorderLeft",
+  "tab.reorderRight",
+  "tab.rename",
+  "workspace.new",
+  "workspace.previous",
+  "workspace.next",
+  ...WORKSPACE_SELECT_KEYBINDING_COMMANDS,
+  "workspace.rename",
+  "workspace.close",
+  "workspace.switcher",
+  "attention.jumpLatest",
+  "attention.list",
+] as const;
+export type WorkspaceKeybindingCommand = (typeof WORKSPACE_KEYBINDING_COMMANDS)[number];
+
 const THREAD_KEYBINDING_COMMANDS = [
   "thread.stop",
   "thread.steerQueuedMessage",
@@ -101,6 +167,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
+  ...WORKSPACE_KEYBINDING_COMMANDS,
 ] as const;
 
 export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([

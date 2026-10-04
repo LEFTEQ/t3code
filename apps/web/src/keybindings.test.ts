@@ -563,32 +563,23 @@ describe("thread navigation helpers", () => {
     );
   });
 
-  it("keeps default thread jumps off the web so the browser can switch tabs", () => {
+  it("gives mod+1…9 to workspaces on desktop and to the browser on the web", () => {
     const input = event({ key: "1", metaKey: true });
     assert.isNull(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isDesktop: false },
+        context: { isDesktop: false, workspaceOpen: true },
       }),
     );
     assert.strictEqual(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isDesktop: true },
+        context: { isDesktop: true, workspaceOpen: true },
       }),
-      "thread.jump.1",
+      "workspace.select.1",
     );
+    // Sidebar thread jumps are unbound by default, so no hints appear.
     assert.isFalse(
-      shouldShowThreadJumpHintsForModifiers(
-        event({ metaKey: true }),
-        DEFAULT_RESOLVED_KEYBINDINGS,
-        {
-          platform: "MacIntel",
-          context: { isDesktop: false },
-        },
-      ),
-    );
-    assert.isTrue(
       shouldShowThreadJumpHintsForModifiers(
         event({ metaKey: true }),
         DEFAULT_RESOLVED_KEYBINDINGS,
@@ -629,9 +620,9 @@ describe("model picker navigation helpers", () => {
     assert.strictEqual(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "MacIntel",
-        context: { isDesktop: true, modelPickerOpen: false },
+        context: { isDesktop: true, modelPickerOpen: false, workspaceOpen: true },
       }),
-      "thread.jump.3",
+      "workspace.select.3",
     );
   });
 });
@@ -1249,7 +1240,6 @@ describe("composer and pull request shortcuts", () => {
 
   const shortcuts = [
     ["h", "composer.host"],
-    ["e", "composer.effort"],
     ["a", "composer.mode"],
     ["x", "composer.workspace"],
     ["g", "composer.branch"],
@@ -1287,24 +1277,24 @@ describe("composer and pull request shortcuts", () => {
   }
 
   for (const platform of ["MacIntel", "Win32", "Linux"]) {
-    it.each([
-      ["s", "thread.settle"],
-      ["p", "thread.pin"],
-    ])(`preserves the existing %s shortcut on ${platform}`, (key, command) => {
-      assert.strictEqual(
-        resolveShortcutCommand(
-          event({
-            key,
-            shiftKey: true,
-            metaKey: platform === "MacIntel",
-            ctrlKey: platform !== "MacIntel",
-          }),
-          DEFAULT_RESOLVED_KEYBINDINGS,
-          { platform },
-        ),
-        command,
-      );
-    });
+    it.each([["s", "thread.settle"]])(
+      `preserves the existing %s shortcut on ${platform}`,
+      (key, command) => {
+        assert.strictEqual(
+          resolveShortcutCommand(
+            event({
+              key,
+              shiftKey: true,
+              metaKey: platform === "MacIntel",
+              ctrlKey: platform !== "MacIntel",
+            }),
+            DEFAULT_RESOLVED_KEYBINDINGS,
+            { platform },
+          ),
+          command,
+        );
+      },
+    );
   }
 
   const altEffortBindings = compileResolvedKeybindingsConfig([
@@ -1409,7 +1399,7 @@ describe("Usage shortcuts", () => {
   });
 
   it.each(["Linux", "MacIntel"])(
-    "preserves desktop numbered thread shortcuts on Usage on %s",
+    "preserves desktop numbered workspace shortcuts on Usage on %s",
     (platform) => {
       const shortcut = event({
         key: "2",
@@ -1419,14 +1409,14 @@ describe("Usage shortcuts", () => {
       assert.strictEqual(
         resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, {
           platform,
-          context: { usagePageOpen: true, isDesktop: true },
+          context: { usagePageOpen: true, isDesktop: true, workspaceOpen: true },
         }),
-        "thread.jump.2",
+        "workspace.select.2",
       );
       assert.isNotNull(
-        shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "thread.jump.2", {
+        shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "workspace.select.2", {
           platform,
-          context: { usagePageOpen: true, isDesktop: true },
+          context: { usagePageOpen: true, isDesktop: true, workspaceOpen: true },
         }),
       );
     },
@@ -1445,6 +1435,241 @@ describe("Usage shortcuts", () => {
       resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform: "Linux",
       }),
+    );
+  });
+});
+
+describe("cmux workspace keymap", () => {
+  const desktop = { isDesktop: true, isWeb: false, workspaceOpen: true };
+  const web = { isDesktop: false, isWeb: true, workspaceOpen: true };
+  const resolveOnMac = (input: ShortcutEventLike, context: Record<string, boolean>) =>
+    resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "MacIntel", context });
+
+  // The D10 table: chord on desktop → command, and the browser substitute where Chrome reserves it.
+  const rows: ReadonlyArray<{
+    readonly command: KeybindingCommand;
+    readonly desktop: ShortcutEventLike;
+    // null: desktop-only, the browser keeps the chord (⌘1…9 switch browser tabs).
+    readonly web?: ShortcutEventLike | null;
+  }> = [
+    { command: "workspace.splitRight", desktop: event({ key: "d", metaKey: true }) },
+    {
+      command: "pane.focusLeft",
+      desktop: event({ key: "ArrowLeft", altKey: true, shiftKey: true }),
+    },
+    {
+      command: "pane.focusRight",
+      desktop: event({ key: "ArrowRight", altKey: true, shiftKey: true }),
+    },
+    { command: "pane.focusUp", desktop: event({ key: "ArrowUp", altKey: true, shiftKey: true }) },
+    {
+      command: "pane.focusDown",
+      desktop: event({ key: "ArrowDown", altKey: true, shiftKey: true }),
+    },
+    {
+      command: "tab.previous",
+      desktop: event({ key: "ArrowLeft", metaKey: true, shiftKey: true }),
+    },
+    { command: "tab.next", desktop: event({ key: "ArrowRight", metaKey: true, shiftKey: true }) },
+    {
+      command: "workspace.previous",
+      desktop: event({ key: "ArrowUp", metaKey: true, shiftKey: true }),
+    },
+    {
+      command: "workspace.next",
+      desktop: event({ key: "ArrowDown", metaKey: true, shiftKey: true }),
+    },
+    { command: "pane.zoom", desktop: event({ key: "Enter", altKey: true, shiftKey: true }) },
+    {
+      command: "tab.new",
+      desktop: event({ key: "t", metaKey: true }),
+      web: event({ key: "†", code: "KeyT", altKey: true }),
+    },
+    {
+      command: "tab.close",
+      desktop: event({ key: "w", metaKey: true }),
+      web: event({ key: "∑", code: "KeyW", altKey: true }),
+    },
+    {
+      command: "tab.reopen",
+      desktop: event({ key: "T", code: "KeyT", metaKey: true, shiftKey: true }),
+      web: event({ key: "ˇ", code: "KeyT", altKey: true, shiftKey: true }),
+    },
+    {
+      command: "tab.closeOthers",
+      desktop: event({ key: "†", code: "KeyT", metaKey: true, altKey: true }),
+    },
+    { command: "tab.select.1", desktop: event({ key: "1", code: "Digit1", ctrlKey: true }) },
+    { command: "tab.select.last", desktop: event({ key: "9", code: "Digit9", ctrlKey: true }) },
+    {
+      command: "workspace.new",
+      desktop: event({ key: "n", metaKey: true }),
+      web: event({ key: "˜", code: "KeyN", altKey: true }),
+    },
+    {
+      command: "workspace.select.1",
+      desktop: event({ key: "1", code: "Digit1", metaKey: true }),
+      web: null,
+    },
+    {
+      command: "workspace.select.last",
+      desktop: event({ key: "9", code: "Digit9", metaKey: true }),
+      web: null,
+    },
+    { command: "tab.rename", desktop: event({ key: "r", metaKey: true }) },
+    {
+      command: "workspace.rename",
+      desktop: event({ key: "R", code: "KeyR", metaKey: true, shiftKey: true }),
+    },
+    { command: "workspace.switcher", desktop: event({ key: "p", metaKey: true }) },
+    {
+      command: "commandPalette.toggle",
+      desktop: event({ key: "P", code: "KeyP", metaKey: true, shiftKey: true }),
+    },
+    {
+      command: "rightPanel.toggle",
+      desktop: event({ key: "E", code: "KeyE", metaKey: true, shiftKey: true }),
+    },
+    { command: "attention.list", desktop: event({ key: "i", metaKey: true }) },
+    {
+      command: "attention.jumpLatest",
+      desktop: event({ key: "U", code: "KeyU", metaKey: true, shiftKey: true }),
+    },
+    {
+      command: "pane.resizeLeft",
+      desktop: event({ key: "H", code: "KeyH", ctrlKey: true, shiftKey: true }),
+    },
+    {
+      command: "pane.equalize",
+      desktop: event({ key: "+", code: "Equal", ctrlKey: true, metaKey: true, shiftKey: true }),
+    },
+    {
+      command: "tab.moveLeft",
+      desktop: event({ key: "ArrowLeft", altKey: true, metaKey: true, shiftKey: true }),
+    },
+    {
+      command: "tab.moveNextPane",
+      desktop: event({
+        key: "}",
+        code: "BracketRight",
+        ctrlKey: true,
+        metaKey: true,
+        shiftKey: true,
+      }),
+    },
+    {
+      command: "tab.reorderLeft",
+      desktop: event({
+        key: "”",
+        code: "BracketLeft",
+        altKey: true,
+        metaKey: true,
+        shiftKey: true,
+      }),
+    },
+  ];
+
+  it("resolves every row on desktop and its browser substitute on web", () => {
+    for (const row of rows) {
+      assert.strictEqual(resolveOnMac(row.desktop, desktop), row.command, row.command);
+      if (row.web === null) {
+        assert.isNull(resolveOnMac(row.desktop, web), `${row.command} on web`);
+      } else {
+        assert.strictEqual(
+          resolveOnMac(row.web ?? row.desktop, web),
+          row.command,
+          `${row.command} on web`,
+        );
+      }
+    }
+  });
+
+  it("leaves the chords Chrome reserves to the browser in a web tab", () => {
+    for (const reserved of [
+      event({ key: "t", metaKey: true }),
+      event({ key: "T", code: "KeyT", metaKey: true, shiftKey: true }),
+      event({ key: "n", metaKey: true }),
+    ]) {
+      assert.isNull(resolveOnMac(reserved, web));
+    }
+    assert.strictEqual(resolveOnMac(event({ key: "w", metaKey: true }), web), "rightPanel.close");
+  });
+
+  it("wins over composer text selection", () => {
+    const typing = { ...desktop, editableFocus: true };
+    assert.strictEqual(
+      resolveOnMac(event({ key: "ArrowLeft", altKey: true, shiftKey: true }), typing),
+      "pane.focusLeft",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "ArrowRight", metaKey: true, shiftKey: true }), typing),
+      "tab.next",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "ArrowDown", metaKey: true, shiftKey: true }), typing),
+      "workspace.next",
+    );
+  });
+
+  it("yields to the terminal, the right panel and an open model picker", () => {
+    assert.strictEqual(
+      resolveOnMac(event({ key: "w", metaKey: true }), { ...desktop, terminalFocus: true }),
+      "terminal.close",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "w", metaKey: true }), { ...desktop, previewFocus: true }),
+      "rightPanel.close",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "d", metaKey: true }), { ...desktop, terminalFocus: true }),
+      "terminal.split",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "2", code: "Digit2", metaKey: true }), {
+        ...desktop,
+        modelPickerOpen: true,
+      }),
+      "modelPicker.jump.2",
+    );
+    assert.strictEqual(
+      resolveOnMac(event({ key: "ArrowDown", metaKey: true, shiftKey: true }), {
+        ...desktop,
+        modelPickerOpen: true,
+      }),
+      "modelPicker.nextProvider",
+    );
+  });
+
+  it("stays inert until the workspace host is mounted", () => {
+    const closed = { ...desktop, workspaceOpen: false };
+    assert.strictEqual(
+      resolveOnMac(event({ key: "w", metaKey: true }), closed),
+      "rightPanel.close",
+    );
+    assert.isNull(resolveOnMac(event({ key: "d", metaKey: true }), closed));
+    assert.isNull(resolveOnMac(event({ key: "ArrowLeft", altKey: true, shiftKey: true }), closed));
+  });
+
+  it("moves the t3 commands cmux claims to free chords", () => {
+    const moved: ReadonlyArray<[ShortcutEventLike, KeybindingCommand]> = [
+      [event({ key: "D", code: "KeyD", metaKey: true, shiftKey: true }), "diff.toggle"],
+      [event({ key: "π", code: "KeyP", metaKey: true, altKey: true }), "filePicker.toggle"],
+      [event({ key: "´", code: "KeyE", metaKey: true, altKey: true }), "composer.effort"],
+      [event({ key: "O", code: "KeyO", metaKey: true, shiftKey: true }), "chat.new"],
+    ];
+    for (const [input, command] of moved) {
+      assert.strictEqual(resolveOnMac(input, desktop), command, command);
+    }
+  });
+
+  it("keeps Control chords to macOS, where Control is not mod", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "K", code: "KeyK", ctrlKey: true, shiftKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Linux", context: desktop },
+      ),
+      "pullRequest.copyNumber",
     );
   });
 });

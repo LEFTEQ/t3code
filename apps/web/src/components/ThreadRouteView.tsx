@@ -1,11 +1,11 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import {
   finalizePromotedDraftThreadByRef,
@@ -24,12 +24,9 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
-import {
-  buildThreadRouteParams,
-  resolveThreadRouteRenderState,
-  type ThreadRouteTarget,
-} from "../threadRoutes";
+import { resolveThreadRouteRenderState, type ThreadRouteTarget } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
+import { usePaneContext } from "../workspace/paneContext";
 
 /**
  * The single chat surface behind both `/draft/$draftId` and
@@ -43,13 +40,41 @@ import { resolveThreadSyncPhase } from "../threadSync";
  *
  * Rendered by the `_chat` layout rather than by the two leaf routes, since
  * an element only survives a route swap when the same parent renders it.
+ * Inside a workspace pane the same promotion and redirects go to that pane
+ * through `usePaneContext()` instead of the router.
  */
-export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
-  const navigate = useNavigate();
+export function ThreadRouteView({
+  target,
+  inspector,
+  frame = "page",
+  reserveTitleBarControlInset,
+  titleBarDragRegion,
+}: {
+  target: ThreadRouteTarget;
+  /** "none" leaves the right panel to the workspace host. */
+  inspector?: "inline" | "none";
+  /** "pane" fills a workspace pane; the host owns the page's main landmark and height. */
+  frame?: "page" | "pane";
+  reserveTitleBarControlInset?: boolean;
+  titleBarDragRegion?: boolean;
+}) {
+  const chatViewFrameProps = {
+    ...(inspector ? { inspector } : {}),
+    ...(reserveTitleBarControlInset === undefined ? {} : { reserveTitleBarControlInset }),
+    ...(titleBarDragRegion === undefined ? {} : { titleBarDragRegion }),
+  };
+  const pane = usePaneContext();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
   );
+  // A pane never closes a draft missing from this store: panes are shared by
+  // every browser tab on the origin, and the draft may live in another tab, even
+  // one this tab discarded and that tab reused. This tab's own discards close
+  // their tabs centrally (see workspaceStore). The router's URL is this tab's
+  // own, so there a missing draft leaves.
+  const goneDraftId =
+    pane.paneId === null && draftId !== null && draftSession === null ? draftId : null;
   const threadRefs = useThreadRefs();
   // The server thread this view is about: the route's own ref, or the draft's
   // reserved ref once the server knows it.
@@ -130,6 +155,15 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     markPromotedDraftThreadByRef(inferredThreadRef);
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
+  // Effect events read the latest target and pane without restarting the
+  // hero-transition wait whenever the parent hands over a fresh target object.
+  const replaceWithPromotedThread = useEffectEvent((threadRef: ScopedThreadRef) => {
+    void pane.replaceTarget(target, { kind: "server", threadRef });
+  });
+  const dismissDraftTarget = useEffectEvent(() => {
+    void pane.dismissTarget(target);
+  });
+
   useEffect(() => {
     if (!canonicalThreadRef) {
       return;
@@ -139,23 +173,19 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       if (cancelled) {
         return;
       }
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(canonicalThreadRef),
-        replace: true,
-      });
+      replaceWithPromotedThread(canonicalThreadRef);
     });
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef]);
 
   useEffect(() => {
-    if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
+    if (goneDraftId === null || canonicalThreadRef) {
       return;
     }
-    void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate, target.kind]);
+    dismissDraftTarget();
+  }, [canonicalThreadRef, goneDraftId]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -168,10 +198,10 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
       if (environmentHasAnyThreads) {
-        void navigate({ to: "/", replace: true });
+        void pane.dismissTarget(target);
       }
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [bootstrapComplete, environmentHasAnyThreads, pane, renderState, target]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -191,8 +221,11 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
           threadId={draftSession.threadId}
           routeKind="draft"
           forceExpandedMobileComposer
+          {...chatViewFrameProps}
         />
       );
+    } else if (goneDraftId === null) {
+      view = <DraftNotHere />;
     }
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
@@ -202,13 +235,36 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         threadId={target.threadRef.threadId}
         routeKind="server"
         threadSyncPhase={threadSyncPhase}
+        {...chatViewFrameProps}
       />
     );
   }
 
+  if (frame === "pane") {
+    return (
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">{view}</div>
+    );
+  }
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
       {view}
     </SidebarInset>
+  );
+}
+
+/**
+ * A pane's draft missing from this browser tab's store. It stays open, and
+ * turns into the chat if this tab's store learns the draft.
+ */
+function DraftNotHere() {
+  return (
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyTitle>Draft not available here</EmptyTitle>
+        <EmptyDescription>
+          It is open in another browser tab or window, or no longer exists.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }

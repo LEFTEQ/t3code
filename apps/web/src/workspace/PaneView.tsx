@@ -1,0 +1,215 @@
+import {
+  type CSSProperties,
+  type SyntheticEvent,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import { ThreadRouteView } from "../components/ThreadRouteView";
+import { Button } from "../components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import { cn } from "../lib/utils";
+import { type PaneAttentionEdge, usePaneAttentionEdge } from "./attention";
+import { AttentionList } from "./AttentionList";
+import { PaneContextProvider, markDirectPaneFocus } from "./paneContext";
+import { type PaneId, type PaneLeaf, type PaneRect, selectedTab } from "./paneTree";
+import { PaneTabStrip } from "./PaneTabStrip";
+import { dispatchWorkspaceCommand } from "./useWorkspaceShortcuts";
+import { selectActiveWorkspace, useWorkspaceStore } from "./workspaceStore";
+import { type PaneChrome, createPaneContextValue, paneTabPanelIds } from "./workspaceView";
+
+function percent(value: number): string {
+  return `${value * 100}%`;
+}
+
+function EmptyPane({
+  paneId,
+  isFocused,
+}: {
+  readonly paneId: PaneId;
+  readonly isFocused: boolean;
+}) {
+  // The last pane stays and shows this state; any other empty pane can close.
+  const closable = useWorkspaceStore((state) => selectActiveWorkspace(state).root.kind === "split");
+  // Focus moving here by keyboard must leave the previous pane's composer, or
+  // typing would still land in a chat that is no longer focused.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const button = buttonRef.current;
+    if (!isFocused || !button) return;
+    const pane = button.closest("[data-pane-id]");
+    if (pane && !pane.contains(document.activeElement)) button.focus({ preventScroll: true });
+  }, [isFocused]);
+  return (
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyTitle>Empty pane</EmptyTitle>
+        <EmptyDescription>Start a thread here, or open one from the sidebar.</EmptyDescription>
+        <div className="mt-4 flex justify-center gap-2">
+          <Button ref={buttonRef} size="sm" onClick={() => dispatchWorkspaceCommand("tab.new")}>
+            New thread
+          </Button>
+          {closable ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => useWorkspaceStore.getState().closeTab(paneId)}
+            >
+              Close pane
+            </Button>
+          ) : null}
+        </div>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+const EDGE_CLASS: Record<PaneAttentionEdge, string> = {
+  input: "bg-primary",
+  approval: "bg-warning",
+  error: "bg-error",
+};
+
+/**
+ * The pane's 2px top edge for its most urgent tab. Fades in once and settles;
+ * the last color is kept while it fades out.
+ */
+function PaneAttentionEdgeBar({ pane }: { readonly pane: PaneLeaf }) {
+  const edge = usePaneAttentionEdge(pane.tabs);
+  const [shownEdge, setShownEdge] = useState<PaneAttentionEdge>("input");
+  if (edge !== null && edge !== shownEdge) setShownEdge(edge);
+  return (
+    <div
+      aria-hidden
+      data-attention={edge ?? "none"}
+      className={cn(
+        "pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-(--workspace-focus-duration) ease-out",
+        EDGE_CLASS[shownEdge],
+        edge === null ? "opacity-0" : "opacity-100",
+      )}
+    />
+  );
+}
+
+// Inside a pane the collapsed-sidebar title-bar inset belongs to the strip, not the chat header.
+const PANE_CONTENT_STYLE = {
+  "--workspace-titlebar-content-left": "var(--workspace-gutter-start)",
+} as CSSProperties;
+
+/**
+ * Everything inside a pane. Memoized apart from the pane's geometry so a
+ * divider drag repositions panes without re-rendering their chats.
+ */
+const PaneBody = memo(function PaneBody({
+  pane,
+  top,
+  topLeft,
+  topRight,
+  isFocused,
+  showFocusRing,
+}: PaneChrome & {
+  readonly pane: PaneLeaf;
+  readonly isFocused: boolean;
+  readonly showFocusRing: boolean;
+}) {
+  const chrome = useMemo(() => ({ top, topLeft, topRight }), [top, topLeft, topRight]);
+  const paneContext = useMemo(
+    () => createPaneContextValue(pane.id, isFocused),
+    [pane.id, isFocused],
+  );
+  const tab = selectedTab(pane);
+  return (
+    <div
+      data-focus-ring={showFocusRing ? "true" : "false"}
+      className="@container/pane relative flex min-h-0 min-w-0 flex-1 flex-col after:pointer-events-none after:absolute after:inset-0 after:z-20 after:opacity-0 after:ring-1 after:ring-primary/60 after:ring-inset after:transition-opacity after:duration-(--workspace-focus-duration) after:ease-out data-[focus-ring=true]:after:opacity-100"
+    >
+      <PaneAttentionEdgeBar pane={pane} />
+      <PaneTabStrip pane={pane} chrome={chrome} isFocused={isFocused} />
+      {isFocused ? <AttentionList /> : null}
+      <div
+        data-pane-content
+        id={paneTabPanelIds(pane.id).panel}
+        role={tab ? "tabpanel" : undefined}
+        aria-labelledby={tab ? paneTabPanelIds(pane.id).tab : undefined}
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        style={PANE_CONTENT_STYLE}
+      >
+        <PaneContextProvider value={paneContext}>
+          {tab ? (
+            <ThreadRouteView
+              target={tab}
+              frame="pane"
+              inspector="none"
+              reserveTitleBarControlInset={false}
+              titleBarDragRegion={false}
+            />
+          ) : (
+            <EmptyPane paneId={pane.id} isFocused={isFocused} />
+          )}
+        </PaneContextProvider>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * One leaf of the workspace, absolutely placed from its unit-square rect.
+ * Panes render flat and keyed by id, so splitting, closing or zooming never
+ * remounts a chat that stays on screen.
+ */
+export const PaneView = memo(function PaneView({
+  pane,
+  rect,
+  chrome,
+  multiPane,
+}: {
+  readonly pane: PaneLeaf;
+  readonly rect: PaneRect;
+  readonly chrome: PaneChrome;
+  readonly multiPane: boolean;
+}) {
+  const isFocused = useWorkspaceStore(
+    (state) => selectActiveWorkspace(state).focusedPaneId === pane.id,
+  );
+  const focusPane = (event: SyntheticEvent) => {
+    if (isFocused) return;
+    // A press inside the chat, or keyboard focus on a tab (so the tab list's
+    // arrow keys work), keeps DOM focus instead of jumping to the composer.
+    if (
+      event.target instanceof Element &&
+      (event.target.closest("[data-pane-content]") ||
+        event.target.matches('[role="tab"]:focus-visible'))
+    ) {
+      markDirectPaneFocus(pane.id);
+    }
+    useWorkspaceStore.getState().focusPane(pane.id);
+  };
+  return (
+    <section
+      aria-label="Workspace pane"
+      data-pane-id={pane.id}
+      data-focused={isFocused ? "true" : "false"}
+      className="absolute flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+      style={{
+        left: percent(rect.x),
+        top: percent(rect.y),
+        width: percent(rect.width),
+        height: percent(rect.height),
+      }}
+      onPointerDownCapture={focusPane}
+      onFocusCapture={focusPane}
+    >
+      <PaneBody
+        pane={pane}
+        top={chrome.top}
+        topLeft={chrome.topLeft}
+        topRight={chrome.topRight}
+        isFocused={isFocused}
+        showFocusRing={isFocused && multiPane}
+      />
+    </section>
+  );
+});

@@ -58,7 +58,18 @@ import { ComposerSurface } from "./chat/ComposerSurface";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { measureRestingComposerControls } from "./chat/restingComposerControlsMeasurement";
 import { resolveRestingComposerControlsNaturalWidth } from "./composerFooterLayout";
+import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
 import { cn } from "~/lib/utils";
+
+/** The state word a narrow workspace pane shows at the end of its status line. */
+const COMPACT_STATUS_WORD: Record<SidebarThreadStatus, { label: string; className: string }> = {
+  approval: { label: "approval", className: "text-warning" },
+  input: { label: "needs you", className: "text-primary" },
+  working: { label: "working", className: "" },
+  monitoring: { label: "monitoring", className: "" },
+  failed: { label: "error", className: "text-destructive" },
+  ready: { label: "idle", className: "" },
+};
 
 export interface BranchToolbarHandle {
   openBranchPicker: () => void;
@@ -616,6 +627,9 @@ export const BranchToolbar = memo(function BranchToolbar({
   const labelsOverflow = useLabelsOverflow(stripElement);
 
   if (!hasActiveThread || !activeProject) return null;
+  const compactStatus = serverThread
+    ? COMPACT_STATUS_WORD[resolveSidebarThreadStatus(serverThread)]
+    : null;
 
   return (
     <ComposerSurface.ContextStrip
@@ -623,12 +637,17 @@ export const BranchToolbar = memo(function BranchToolbar({
       data-compact={labelsOverflow ? "" : undefined}
       className={cn(
         "gap-1 text-xs font-normal text-muted-foreground/70",
+        // A narrow workspace pane reads this strip as its one-line status bar.
+        "@max-[45rem]/pane:font-mono @max-[45rem]/pane:text-2xs",
         // A non-Git strip with no visible composer controls should occupy no
         // space, but its host must retain a prospective width so controls can
         // become visible again when the chat view grows.
         !contextStripVisible && "pointer-events-none invisible absolute inset-x-0 top-full",
       )}
     >
+      <span className="hidden min-w-0 max-w-[35%] shrink truncate ps-1.5 text-muted-foreground @max-[45rem]/pane:inline">
+        {activeProject.title}
+      </span>
       {showGitControls ? (
         <div className="contents @3xl/composer-surface:hidden">
           <MobileRunContextSelector
@@ -722,6 +741,16 @@ export const BranchToolbar = memo(function BranchToolbar({
           {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
           {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
         />
+      ) : null}
+      {compactStatus ? (
+        <span
+          className={cn(
+            "ms-auto hidden shrink-0 pe-1 @max-[45rem]/pane:inline",
+            compactStatus.className,
+          )}
+        >
+          {compactStatus.label}
+        </span>
       ) : null}
     </ComposerSurface.ContextStrip>
   );

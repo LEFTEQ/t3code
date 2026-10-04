@@ -11,6 +11,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   isRichTextBoldShortcut,
   resolveShortcutCommand,
@@ -35,6 +36,11 @@ import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { onWorkspaceUiCommand } from "../workspace/useWorkspaceShortcuts";
+import WorkspaceList, {
+  requestWorkspaceRename,
+  useWorkspaceSidebarMode,
+} from "./sidebar/WorkspaceList";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
@@ -90,6 +96,20 @@ function SidebarControl() {
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
+  const [, setWorkspaceSidebarMode] = useWorkspaceSidebarMode();
+
+  // Renaming a workspace happens in the workspace list, so bring it on screen
+  // first when the sidebar is collapsed or showing All threads.
+  useEffect(
+    () =>
+      onWorkspaceUiCommand((command) => {
+        if (command !== "workspace.rename") return;
+        setWorkspaceSidebarMode("workspaces");
+        if (!isSidebarVisible) toggleSidebar();
+        requestWorkspaceRename();
+      }),
+    [isSidebarVisible, setWorkspaceSidebarMode, toggleSidebar],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -225,6 +245,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  // Phones keep the single routed chat, so they keep the thread list too.
+  const [sidebarMode] = useWorkspaceSidebarMode();
+  const isMobileViewport = useMediaQuery("max-sm");
+  const showWorkspaceList = sidebarMode === "workspaces" && !isMobileViewport;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -305,7 +329,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           collapsible="offcanvas"
           data-app-sidebar=""
           role="navigation"
-          aria-label={isOnSettings ? "Settings" : "Threads"}
+          aria-label={
+            isOnSettings
+              ? "Settings"
+              : !legacySidebarEnabled && showWorkspaceList
+                ? "Workspaces"
+                : "Threads"
+          }
           resizable={{
             maxWidth: sidebarMaximumWidth,
             minWidth: THREAD_SIDEBAR_MIN_WIDTH,
@@ -323,6 +353,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             </>
           ) : legacySidebarEnabled ? (
             <LegacyThreadSidebar />
+          ) : showWorkspaceList ? (
+            <WorkspaceList />
           ) : (
             <ThreadSidebar />
           )}

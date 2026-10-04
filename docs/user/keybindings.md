@@ -3,6 +3,38 @@
 Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
 also lists the command IDs and defaults available in your version.
 
+## Split workspace
+
+The defaults follow cmux. They work while a workspace is open; the command
+palette lists the same actions.
+
+| Action                                                 | macOS desktop                                       | Browser tab             |
+| ------------------------------------------------------ | --------------------------------------------------- | ----------------------- |
+| Split pane right                                       | `Cmd+D`                                             | same                    |
+| Focus pane left / right / up / down                    | `Option+Shift+Arrow`                                | same                    |
+| Previous / next tab                                    | `Cmd+Shift+Left` / `Right`                          | same                    |
+| Previous / next workspace                              | `Cmd+Shift+Up` / `Down`                             | same                    |
+| New thread tab / close tab                             | `Cmd+T` / `Cmd+W`                                   | `Option+T` / `Option+W` |
+| Reopen closed tab / close other tabs                   | `Cmd+Shift+T` / `Option+Cmd+T`                      | `Option+Shift+T` / same |
+| Select tab 1–8 / last                                  | `Ctrl+1`…`8` / `Ctrl+9`                             | same                    |
+| New workspace                                          | `Cmd+N`                                             | `Option+N`              |
+| Select workspace 1–8 / last                            | `Cmd+1`…`8` / `Cmd+9`                               | —                       |
+| Switch workspace                                       | `Cmd+P`                                             | same                    |
+| Zoom pane                                              | `Option+Shift+Return`                               | same                    |
+| Resize pane / equalize                                 | `Ctrl+Shift+H/J/K/L` / `Ctrl+Cmd+Shift+=`           | same                    |
+| Move tab to pane / reorder tab                         | `Option+Cmd+Shift+Arrow` / `Option+Cmd+Shift+[` `]` | same                    |
+| Rename tab / workspace                                 | `Cmd+R` / `Cmd+Shift+R`                             | same                    |
+| Jump to the agent waiting on you / list waiting agents | `Cmd+Shift+U` / `Cmd+I`                             | same                    |
+
+Pane, tab and workspace arrows take priority over text selection in the
+composer. Splitting down has no default shortcut; use the pane's split button or
+the palette. The command palette opens with `Cmd+K` or `Cmd+Shift+P`, the file
+picker with `Option+Cmd+P`, the diff with `Cmd+Shift+D`, and the right panel
+toggles with `Cmd+Shift+E`.
+
+The Control-based shortcuts are macOS-only, because Control is `mod` on Windows
+and Linux. There, use the palette or bind those commands in Settings.
+
 ## Composer controls
 
 In **Settings → General → Send shortcut**, choose whether Enter sends, requires
@@ -15,7 +47,7 @@ use `mod+Shift+Enter` for the opposite action. In a new thread, `mod+Enter` keep
 starting the thread in the background.
 
 Use `mod+shift+m` to choose a model and `mod+shift+h` to choose a host.
-Use `mod+shift+e` for effort, `mod+shift+a` for access mode, `mod+shift+x` for the
+Use `mod+alt+e` for effort, `mod+shift+a` for access mode, `mod+shift+x` for the
 workspace, and `mod+shift+g` for the Git branch. The workspace menu includes the
 current checkout, a new worktree, and the previous worktree when available.
 Use `mod+shift+l` to reuse the previous worktree directly.
@@ -84,15 +116,18 @@ Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
 ## When conditions
 
 Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
-`previewOpen`, `modelPickerOpen`, `usagePageOpen`, `editableFocus`, `isWeb`, and `isDesktop`.
+`previewOpen`, `modelPickerOpen`, `usagePageOpen`, `editableFocus`, `workspaceOpen`,
+`isWeb`, `isDesktop`, and `isMac`.
 `editableFocus` is true while a text field, the composer, or another editor has
-the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
-desktop app. Unknown keys evaluate to `false`.
+the keyboard. `workspaceOpen` is true while a split workspace is open. `isWeb` is
+true in a browser tab. `isDesktop` is true in the desktop app. Unknown keys
+evaluate to `false`.
 
-`mod+1` through `mod+9` jump to the first nine threads, and to models while the
-model picker is open. Those defaults use `isDesktop` so they do not steal the
-browser's tab-switch shortcuts. Remove that condition in Settings if you want
-the same jumps in a browser.
+`mod+1` through `mod+9` select workspaces, and models while the model picker is
+open. Those defaults use `isDesktop` so they do not steal the browser's
+tab-switch shortcuts. Remove that condition in Settings if you want the same
+jumps in a browser. Jumping to sidebar threads (`thread.jump.1`…`9`) has no
+default shortcut.
 
 Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
 
@@ -126,10 +161,12 @@ through the pages you have visited, like a browser's back and forward buttons.
 
 ## Reserved shortcuts
 
-In the desktop app, `mod+w` closes the focused terminal or the active right-panel
-tab. When nothing remains to close, it closes the window. In a browser, `mod+w`
-closes the browser tab; rebind `rightPanel.close` and `terminal.close` to an available
-shortcut such as `alt+w`.
+In the desktop app, `mod+w` closes the focused workspace tab, or the focused
+terminal or right-panel tab while one of those has the keyboard. On macOS it never
+closes the window; use `Ctrl+Cmd+W` for that. In a browser, Chrome keeps
+`mod+t`, `mod+w`, `mod+shift+t`, and `mod+n` for itself, so the workspace uses
+`alt+t`, `alt+w`, `alt+shift+t`, and `alt+n` there. Those work while you are not typing in a text
+field, since `alt` with a letter enters characters on macOS.
 
 Many defaults include `!terminalFocus` so they do not intercept terminal input.
 Keep that condition when remapping them if you want the same behavior.

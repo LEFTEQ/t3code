@@ -54,14 +54,14 @@ export function browseInputEndPaddingClass(input: {
 
 /**
  * The global search overlay hosts three mutually exclusive surfaces: the
- * command palette (⌘K), the project file picker (⌘P), and project content
+ * command palette (⌘K), the project file picker (⌥⌘P), and project content
  * search (⇧⌘F). One reducer owns open/mode state so the surfaces can never
  * stack and re-triggering a mode's shortcut toggles it closed.
  */
 export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
-  | { readonly kind: "add-project" | "new-thread-in" | "change-theme" }
+  | { readonly kind: "add-project" | "new-thread-in" | "change-theme" | "workspaces" }
   | {
       readonly kind: "search";
       readonly query: string;
@@ -85,6 +85,7 @@ export type CommandPaletteUiAction =
   | { readonly _tag: "OpenAddProject" }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
+  | { readonly _tag: "OpenWorkspaces" }
   | { readonly _tag: "ClearOpenIntent" };
 
 export function reduceCommandPaletteUiState(
@@ -116,6 +117,8 @@ export function reduceCommandPaletteUiState(
       return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
     case "OpenChangeTheme":
       return { open: true, mode: "command", openIntent: { kind: "change-theme" } };
+    case "OpenWorkspaces":
+      return { open: true, mode: "command", openIntent: { kind: "workspaces" } };
     case "ClearOpenIntent":
       return state.openIntent ? { ...state, openIntent: null } : state;
   }

@@ -61,6 +61,11 @@ export function PreviewPanelShell(props: {
   widthStorageKey?: string;
   /** Overrides the initial width (px) before the user has resized the panel. */
   defaultWidth?: number;
+  /**
+   * The row the panel shares with its sibling column, when that is not the
+   * panel's parent (the workspace inspector is portaled into its own slot).
+   */
+  clampContainer?: HTMLElement | null;
   children: ReactNode;
 }) {
   const isInline = props.mode === "inline";
@@ -70,7 +75,7 @@ export function PreviewPanelShell(props: {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
-  const maxWidth = useClampedMaxWidth(hostRef, isInline && !maximized);
+  const maxWidth = useClampedMaxWidth(hostRef, isInline && !maximized, props.clampContainer);
   const { width, handlers } = useResizableWidth({
     storageKey: props.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: props.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
@@ -163,7 +168,11 @@ export function PreviewPanelShell(props: {
  * Row measurement only runs when `enabled`; modes without a resize handle
  * never apply the resulting width, so they skip the observer entirely.
  */
-function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: boolean): number {
+function useClampedMaxWidth(
+  hostRef: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+  clampContainer: HTMLElement | null | undefined,
+): number {
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -185,7 +194,7 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
   }, []);
   useLayoutEffect(() => {
     if (!enabled) return;
-    const parent = hostRef.current?.parentElement;
+    const parent = clampContainer ?? hostRef.current?.parentElement;
     if (!parent) return;
     // Measure before first paint: the persisted width must be clamped
     // against the row on the initial render, not one observer tick later
@@ -201,6 +210,6 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
     return () => {
       observer.disconnect();
     };
-  }, [hostRef, enabled]);
+  }, [hostRef, enabled, clampContainer]);
   return getPreviewPanelMaxWidth(vw, containerWidth);
 }

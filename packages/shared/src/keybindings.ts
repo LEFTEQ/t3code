@@ -7,7 +7,8 @@ import {
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
   type ResolvedKeybindingRule,
   type ResolvedKeybindingsConfig,
-  THREAD_JUMP_KEYBINDING_COMMANDS,
+  TAB_SELECT_KEYBINDING_COMMANDS,
+  WORKSPACE_SELECT_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 
 type WhenToken =
@@ -18,18 +19,29 @@ type WhenToken =
   | { type: "lparen" }
   | { type: "rparen" };
 
+/**
+ * The fork's defaults follow the operator's cmux keymap (cmux 0.64.25 defaults
+ * with the remaps from ~/.config/cmux/cmux.json). Workspace commands only
+ * apply while the workspace host is mounted (`workspaceOpen`); in a browser
+ * tab the chords Chrome reserves (⌘T, ⌘W, ⌘⇧T, ⌘N) move to ⌥ substitutes,
+ * which stand down while typing because ⌥+letter enters characters on macOS.
+ * Control-based chords are macOS-only (`isMac`): elsewhere Control is `mod`
+ * and they would shadow existing shortcuts. The last matching rule wins.
+ */
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+b", command: "sidebar.toggle" },
   { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
   { key: "mod+]", command: "navigation.forward", when: "!terminalFocus" },
   { key: "mod+j", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
+  { key: "mod+shift+e", command: "rightPanel.toggle" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
-  { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
+  // ⌥⌘D is macOS's Dock-hiding shortcut, so diff takes the free ⌘⇧D.
+  { key: "mod+shift+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
@@ -38,7 +50,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+-", command: "preview.zoomOut", when: "previewFocus" },
   { key: "mod+0", command: "preview.resetZoom", when: "previewFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
-  { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+p", command: "commandPalette.toggle", when: "!terminalFocus" },
+  { key: "mod+alt+p", command: "filePicker.toggle", when: "!terminalFocus" },
   { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   { key: "mod+u", command: "usage.open", when: "!terminalFocus" },
   { key: "mod+alt+a", command: "theme.select", when: "!terminalFocus" },
@@ -46,12 +59,11 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
   { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
-  { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
   { key: "mod+shift+m", command: "modelPicker.toggle", when: "!terminalFocus" },
   { key: "mod+shift+h", command: "composer.host", when: "!terminalFocus" },
-  { key: "mod+shift+e", command: "composer.effort", when: "!terminalFocus" },
+  { key: "mod+alt+e", command: "composer.effort", when: "!terminalFocus" },
   { key: "mod+shift+a", command: "composer.mode", when: "!terminalFocus" },
   { key: "mod+shift+x", command: "composer.workspace", when: "!terminalFocus" },
   { key: "mod+shift+g", command: "composer.branch", when: "!terminalFocus" },
@@ -64,12 +76,12 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+]", command: "thread.next" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
-  { key: "mod+shift+p", command: "thread.pin", when: "!terminalFocus" },
   { key: "mod+z", command: "thread.undo", when: "!terminalFocus && !editableFocus" },
-  ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
+  // Before the model picker digits, so an open picker still claims mod+1…9.
+  ...WORKSPACE_SELECT_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,
-    when: "isDesktop",
+    when: "workspaceOpen && isDesktop",
   })),
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
@@ -83,6 +95,74 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+2", command: "usage.period.week", when: "usagePageOpen" },
   { key: "mod+shift+3", command: "usage.period.month", when: "usagePageOpen" },
   { key: "mod+shift+4", command: "usage.period.quarter", when: "usagePageOpen" },
+  // Split workspace. These come last so they win over the panel, terminal and
+  // picker rules sharing their chords whenever their conditions hold.
+  { key: "mod+d", command: "workspace.splitRight", when: "workspaceOpen && !terminalFocus" },
+  { key: "alt+shift+arrowleft", command: "pane.focusLeft", when: "workspaceOpen" },
+  { key: "alt+shift+arrowright", command: "pane.focusRight", when: "workspaceOpen" },
+  { key: "alt+shift+arrowup", command: "pane.focusUp", when: "workspaceOpen" },
+  { key: "alt+shift+arrowdown", command: "pane.focusDown", when: "workspaceOpen" },
+  { key: "alt+shift+enter", command: "pane.zoom", when: "workspaceOpen" },
+  { key: "ctrl+mod+shift+=", command: "pane.equalize", when: "workspaceOpen && isMac" },
+  { key: "ctrl+shift+h", command: "pane.resizeLeft", when: "workspaceOpen && isMac" },
+  { key: "ctrl+shift+j", command: "pane.resizeDown", when: "workspaceOpen && isMac" },
+  { key: "ctrl+shift+k", command: "pane.resizeUp", when: "workspaceOpen && isMac" },
+  { key: "ctrl+shift+l", command: "pane.resizeRight", when: "workspaceOpen && isMac" },
+  { key: "mod+t", command: "tab.new", when: "workspaceOpen && isDesktop" },
+  { key: "alt+t", command: "tab.new", when: "workspaceOpen && isWeb && !editableFocus" },
+  {
+    key: "mod+w",
+    command: "tab.close",
+    when: "workspaceOpen && isDesktop && !terminalFocus && !previewFocus",
+  },
+  {
+    key: "alt+w",
+    command: "tab.close",
+    when: "workspaceOpen && isWeb && !terminalFocus && !previewFocus && !editableFocus",
+  },
+  { key: "mod+shift+t", command: "tab.reopen", when: "workspaceOpen && isDesktop" },
+  { key: "alt+shift+t", command: "tab.reopen", when: "workspaceOpen && isWeb && !editableFocus" },
+  { key: "mod+alt+t", command: "tab.closeOthers", when: "workspaceOpen" },
+  { key: "mod+shift+arrowleft", command: "tab.previous", when: "workspaceOpen" },
+  { key: "mod+shift+arrowright", command: "tab.next", when: "workspaceOpen" },
+  ...TAB_SELECT_KEYBINDING_COMMANDS.map((command, index) => ({
+    key: `ctrl+${index + 1}`,
+    command,
+    when: "workspaceOpen && isMac && !modelPickerOpen",
+  })),
+  { key: "alt+mod+shift+arrowleft", command: "tab.moveLeft", when: "workspaceOpen" },
+  { key: "alt+mod+shift+arrowright", command: "tab.moveRight", when: "workspaceOpen" },
+  { key: "alt+mod+shift+arrowup", command: "tab.moveUp", when: "workspaceOpen" },
+  { key: "alt+mod+shift+arrowdown", command: "tab.moveDown", when: "workspaceOpen" },
+  { key: "ctrl+mod+shift+[", command: "tab.movePreviousPane", when: "workspaceOpen && isMac" },
+  { key: "ctrl+mod+shift+]", command: "tab.moveNextPane", when: "workspaceOpen && isMac" },
+  { key: "alt+mod+shift+[", command: "tab.reorderLeft", when: "workspaceOpen" },
+  { key: "alt+mod+shift+]", command: "tab.reorderRight", when: "workspaceOpen" },
+  { key: "mod+r", command: "tab.rename", when: "workspaceOpen && !previewFocus" },
+  {
+    key: "mod+n",
+    command: "workspace.new",
+    when: "workspaceOpen && isDesktop && !terminalFocus",
+  },
+  {
+    key: "alt+n",
+    command: "workspace.new",
+    when: "workspaceOpen && isWeb && !terminalFocus && !editableFocus",
+  },
+  {
+    key: "mod+shift+arrowup",
+    command: "workspace.previous",
+    when: "workspaceOpen && !modelPickerOpen",
+  },
+  {
+    key: "mod+shift+arrowdown",
+    command: "workspace.next",
+    when: "workspaceOpen && !modelPickerOpen",
+  },
+  { key: "mod+shift+r", command: "workspace.rename", when: "workspaceOpen" },
+  { key: "mod+p", command: "workspace.switcher", when: "workspaceOpen && !terminalFocus" },
+  { key: "mod+i", command: "attention.list", when: "workspaceOpen" },
+  { key: "mod+shift+u", command: "attention.jumpLatest", when: "workspaceOpen" },
 ];
 
 function normalizeKeyToken(token: string): string {

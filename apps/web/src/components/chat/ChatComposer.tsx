@@ -4737,6 +4737,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     hasMultilinePrompt,
     timelineOverflows,
   });
+  // A narrow workspace pane folds an idle composer into one prompt line until
+  // it is focused (index.css, "Compact pane mode"); anything worth keeping in
+  // view holds it open. Outside a `pane` container the flag has no effect.
+  const isComposerCompactCollapsible =
+    routeKind === "server" &&
+    !isComposerResting &&
+    !isComposerCollapsedMobile &&
+    !isComposerApprovalState &&
+    pendingUserInputs.length === 0 &&
+    !composerHasExpandedChrome &&
+    !composerSendState.hasSendableContent;
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
@@ -6366,6 +6377,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ref={composerSurfaceRef}
             data-chat-composer-surface="true"
             data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
+            data-chat-composer-compact-collapsible={isComposerCompactCollapsible || undefined}
             className={cn(
               "rounded-3xl transition-[background-color] duration-200",
               isDragOverComposer ? "bg-accent/45 ring-1 ring-primary/70" : null,

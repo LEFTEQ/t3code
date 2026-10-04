@@ -5,7 +5,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
   composerDraftHasUserContent,
@@ -31,9 +31,10 @@ import {
 } from "../lib/chatThreadActions";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { environmentServerConfigsAtom } from "../state/server";
-import { resolveThreadRouteTarget } from "../threadRoutes";
+import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { usePaneContext } from "../workspace/paneContext";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -54,29 +55,42 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
+/** Shows the draft a new-thread request resolved to; defaults to the calling surface's pane. */
+export type NewThreadPresenter = (
+  target: ThreadRouteTarget,
+  options: { readonly replace: boolean },
+) => void | Promise<void>;
+
+export interface NewThreadOptions extends NewThreadWorkspaceOptions {
+  replace?: boolean;
+  /**
+   * Overrides where the draft is shown, e.g. a workspace command opening it as
+   * a new tab. Without it the draft opens through `usePaneContext()`.
+   */
+  present?: NewThreadPresenter;
+}
+
+/**
+ * Resolves, reuses or mints the draft for a project, then presents it. The
+ * surface it reads (current target, location key) and presents through is the
+ * caller's pane, or the router when no workspace host is mounted.
+ */
 export function useNewThreadHandler() {
   const environmentServerConfigs = useAtomValue(environmentServerConfigsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const router = useRouter();
-  const getCurrentRouteTarget = useCallback(() => {
-    const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
-    return resolveThreadRouteTarget(currentRouteParams);
-  }, [router]);
+  const pane = usePaneContext();
+  const getCurrentRouteTarget = pane.readTarget;
 
   return useCallback(
     (
       projectRef: ScopedProjectRef,
-      options?: {
-        branch?: string | null;
-        worktreePath?: string | null;
-        envMode?: DraftThreadEnvMode;
-        startFromOrigin?: boolean;
-        replace?: boolean;
-      },
+      options?: NewThreadOptions,
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      const present: NewThreadPresenter =
+        options?.present ?? ((target, presentOptions) => pane.openTarget(target, presentOptions));
       const projects = readProjects();
       const targetServerSettings =
         environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
@@ -90,8 +104,10 @@ export function useNewThreadHandler() {
         setLogicalProjectDraftThreadId,
         setModelSelection,
       } = useComposerDraftStore.getState();
-      const requestingRouteHref = router.state.location.href;
-      const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
+      // A pane that moves to another target or closes while defaults resolve
+      // changes this key too, so its stale request drops instead of presenting.
+      const requestingLocationKey = pane.readLocationKey();
+      const routeChangedSinceRequest = () => pane.readLocationKey() !== requestingLocationKey;
       const currentRouteTarget = getCurrentRouteTarget();
       // A new thread carries the user's working mode from the thread being
       // viewed. The target project's configured model still wins; interaction
@@ -317,11 +333,10 @@ export function useNewThreadHandler() {
           ) {
             return opened;
           }
-          await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: emptyStoredDraftThread.draftId },
-            replace: options?.replace ?? false,
-          });
+          await present(
+            { kind: "draft", draftId: emptyStoredDraftThread.draftId },
+            { replace: options?.replace ?? false },
+          );
           return opened;
         })();
       }
@@ -393,11 +408,10 @@ export function useNewThreadHandler() {
             interactionMode: racedDraft.interactionMode,
             ...pickExplicitWorkspaceOptions(options),
           });
-          await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: racedDraft.draftId },
-            replace: options?.replace ?? false,
-          });
+          await present(
+            { kind: "draft", draftId: racedDraft.draftId },
+            { replace: options?.replace ?? false },
+          );
           return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
@@ -422,15 +436,11 @@ export function useNewThreadHandler() {
           // state. The project default wins when both are present.
           setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
         }
-        await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId },
-          replace: options?.replace ?? false,
-        });
+        await present({ kind: "draft", draftId }, { replace: options?.replace ?? false });
         return { draftId, threadId };
       })();
     },
-    [environmentServerConfigs, getCurrentRouteTarget, projectGroupingSettings, router],
+    [environmentServerConfigs, getCurrentRouteTarget, pane, projectGroupingSettings],
   );
 }
 
