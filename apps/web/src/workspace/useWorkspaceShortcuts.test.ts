@@ -54,7 +54,7 @@ describe("runWorkspaceCommand", () => {
   });
 
   it("resizes by cmux's step against the pane tree's size, and not without one", () => {
-    run("workspace.splitRight");
+    store().splitFocused("right");
     const before = rootRatio();
     run("pane.resizeLeft");
     expect(Math.abs((rootRatio() ?? 0) - (before ?? 0))).toBeCloseTo(PANE_RESIZE_STEP_PX / 1000);

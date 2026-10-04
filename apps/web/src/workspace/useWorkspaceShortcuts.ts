@@ -1,5 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
+  type ScopedProjectRef,
   TAB_SELECT_KEYBINDING_COMMANDS,
   WORKSPACE_SELECT_KEYBINDING_COMMANDS,
   type WorkspaceKeybindingCommand,
@@ -7,19 +9,21 @@ import {
 import { type RefObject, useEffect, useEffectEvent } from "react";
 
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import {
   isWorkspaceCommand,
   resolveShortcutCommand,
   setWorkspaceShortcutsActive,
 } from "../keybindings";
-import { resolveThreadActionProjectRef } from "../lib/chatThreadActions";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
+import { readThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { selectActiveWorkspace, useWorkspaceStore } from "./workspaceStore";
+import { findTabLocation } from "./paneTree";
+import { selectActiveWorkspace, selectFocusedTab, useWorkspaceStore } from "./workspaceStore";
 
 /** Workspace commands the store cannot run on its own; their UI owner subscribes. */
 export type WorkspaceUiCommand = Extract<
@@ -62,7 +66,8 @@ type WorkspaceStore = ReturnType<typeof useWorkspaceStore.getState>;
 export interface WorkspaceCommandEnvironment {
   /** The pane tree's size in pixels, for keyboard resizing. */
   readonly containerSize: () => { width: number; height: number } | null;
-  readonly openNewTab: () => void;
+  /** Opens a fresh draft for the focused tab's project, as a tab or in a new split. */
+  readonly openNewTab: (split?: "right" | "down") => void;
   readonly emit: (command: WorkspaceUiCommand) => void;
 }
 
@@ -90,9 +95,9 @@ export function runWorkspaceCommand(
 
   switch (command) {
     case "workspace.splitRight":
-      return store.splitFocused("right");
+      return environment.openNewTab("right");
     case "workspace.splitDown":
-      return store.splitFocused("down");
+      return environment.openNewTab("down");
     case "pane.focusLeft":
       return store.focusDirection("left");
     case "pane.focusRight":
@@ -184,6 +189,20 @@ function workspaceShortcutContext(target: EventTarget | null) {
   };
 }
 
+/** The project of the focused pane's selected tab, if it has one. */
+function focusedTabProjectRef(): ScopedProjectRef | null {
+  const tab = selectFocusedTab(useWorkspaceStore.getState());
+  if (tab?.kind === "server") {
+    const shell = readThreadShell(tab.threadRef);
+    return shell ? scopeProjectRef(shell.environmentId, shell.projectId) : null;
+  }
+  if (tab?.kind === "draft") {
+    const draft = useComposerDraftStore.getState().getDraftSession(tab.draftId);
+    return draft ? scopeProjectRef(draft.environmentId, draft.projectId) : null;
+  }
+  return null;
+}
+
 function isRichTextComposerTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-composer-rich-text="true"]') !== null;
 }
@@ -205,22 +224,31 @@ export function useWorkspaceShortcuts(containerRef: RefObject<HTMLElement | null
   const newThreadContext = useHandleNewThread();
 
   // ⌘T opens a draft for the focused tab's project; with no project to
-  // inherit, the palette asks which one.
-  const openNewTab = useEffectEvent(() => {
-    const projectRef = resolveThreadActionProjectRef({
-      activeDraftThread: newThreadContext.activeDraftThread,
-      activeThread: newThreadContext.activeThread ?? undefined,
-      defaultProjectRef: newThreadContext.defaultProjectRef,
-      handleNewThread: newThreadContext.handleNewThread,
-    });
+  // inherit, the palette asks which one. A split does the same into a new
+  // pane, like cmux opening a fresh surface, and only inherits the focused
+  // tab's project: from an empty pane it splits off another empty pane.
+  const openNewTab = useEffectEvent((split?: "right" | "down") => {
+    // Read from the store, not the route: a pane-bar click focuses its pane
+    // a moment before the URL catches up.
+    const projectRef =
+      focusedTabProjectRef() ?? (split ? null : newThreadContext.defaultProjectRef);
     if (!projectRef) {
-      openCommandPalette({ open: "new-thread-in" });
+      if (split) useWorkspaceStore.getState().splitFocused(split);
+      else openCommandPalette({ open: "new-thread-in" });
       return;
     }
     // The presenter is the only placement: a reused draft already open
-    // somewhere is focused there instead of opening twice.
+    // somewhere is focused there instead of opening twice. A project keeps
+    // one empty draft, so a split whose draft is already on screen opens empty.
     void newThreadContext.handleNewThread(projectRef, {
-      present: (target) => useWorkspaceStore.getState().openTarget(target),
+      present: (target) => {
+        const store = useWorkspaceStore.getState();
+        if (!split) return store.openTarget(target);
+        const shown = store.workspaces.some(
+          (workspace) => findTabLocation(workspace.root, target) !== null,
+        );
+        store.splitFocused(split, shown ? undefined : target);
+      },
     });
   });
 

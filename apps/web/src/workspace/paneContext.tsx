@@ -36,6 +36,26 @@ export interface PaneContextValue {
   readonly dismissTarget: (target: ThreadRouteTarget) => void | Promise<void>;
 }
 
+let directFocus: { readonly paneId: PaneId; readonly at: number } | null = null;
+
+/**
+ * A press or focus landed inside this pane's chat and focused the pane: that
+ * element keeps DOM focus, so the chat skips its composer autofocus once
+ * (text selection and clicked controls survive the focus change).
+ */
+export function markDirectPaneFocus(paneId: PaneId): void {
+  directFocus = { paneId, at: performance.now() };
+}
+
+/** Consumes the mark; true when this pane just gained focus directly. */
+export function takeDirectPaneFocus(paneId: PaneId | null): boolean {
+  const mark = directFocus;
+  directFocus = null;
+  return (
+    mark !== null && paneId !== null && mark.paneId === paneId && performance.now() - mark.at < 1000
+  );
+}
+
 const PaneContext = createContext<PaneContextValue | null>(null);
 
 export const PaneContextProvider = PaneContext.Provider;

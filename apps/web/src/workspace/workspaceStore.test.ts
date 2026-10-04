@@ -74,6 +74,14 @@ describe("workspaceStore", () => {
     expect(active().closedTabs).toEqual([]);
   });
 
+  it("dismisses a gone thread without making it reopenable", () => {
+    store().newTab(thread("A"));
+    store().newTab(thread("B"));
+    store().dismissTab(selectActiveWorkspace(store()).focusedPaneId, 1);
+    expect(paneTabs()).toEqual([[thread("A")]]);
+    expect(active().closedTabs).toEqual([]);
+  });
+
   it("closes the other tabs into the reopen stack", () => {
     store().newTab(thread("A"));
     store().newTab(thread("B"));

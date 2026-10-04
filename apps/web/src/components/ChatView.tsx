@@ -481,7 +481,7 @@ import {
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
-import { usePaneContext } from "../workspace/paneContext";
+import { takeDirectPaneFocus, usePaneContext } from "../workspace/paneContext";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -750,6 +750,8 @@ type ChatViewProps =
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
+      /** False when something above the header, e.g. a workspace tab strip, is the title bar. */
+      titleBarDragRegion?: boolean;
       forceExpandedMobileComposer?: boolean;
       inspector?: ChatViewInspector;
       threadSyncPhase?: ThreadSyncPhase | null;
@@ -761,6 +763,7 @@ type ChatViewProps =
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
+      titleBarDragRegion?: boolean;
       forceExpandedMobileComposer?: boolean;
       inspector?: ChatViewInspector;
       threadSyncPhase?: never;
@@ -1485,6 +1488,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind,
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
+    titleBarDragRegion = true,
     forceExpandedMobileComposer = false,
     inspector = "inline",
   } = props;
@@ -5757,15 +5761,18 @@ export default function ChatView(props: ChatViewProps) {
     // activeThreadRef resets transitively with the active thread.
   }, [activeThread?.id, routeThreadKey]);
 
+  const paneId = pane.paneId;
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen || !paneIsFocused) return;
+    // A click or focus inside this pane focused it: leave DOM focus where it landed.
+    if (takeDirectPaneFocus(paneId)) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen, paneIsFocused]);
+  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen, paneIsFocused, paneId]);
 
   // Tabbing back into the app lands focus wherever it last was, often the right panel or the
   // body. Put it in the composer unless something that takes typing already holds it. The
@@ -9753,7 +9760,7 @@ export default function ChatView(props: ChatViewProps) {
         {/* Top bar */}
         <WorkspacePageHeader
           data-chat-header
-          electron={isElectron}
+          electron={isElectron && titleBarDragRegion}
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
           className="relative bg-background"
         >

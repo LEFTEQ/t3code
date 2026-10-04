@@ -66,6 +66,8 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
   focusDirection: (direction: FocusDirection) => void;
   selectTab: (which: TabChoice) => void;
   closeTab: (paneId?: PaneId, index?: number) => void;
+  /** Closes a tab whose thread is gone (deleted, promoted away); never reopenable. */
+  dismissTab: (paneId: PaneId, index: number) => void;
   reopenClosedTab: () => void;
   closeOtherTabs: () => void;
   moveTab: (direction: FocusDirection | "previousPane" | "nextPane") => void;
@@ -169,6 +171,31 @@ function updateActive(
   const workspace = selectActiveWorkspace(state);
   const next = update(workspace);
   return next === workspace ? {} : replaceWorkspace(state, next);
+}
+
+/** Removes a tab from the active workspace; only user closes are remembered for reopen. */
+function closeTabIn(
+  state: WorkspaceLayoutState,
+  paneId: PaneId | undefined,
+  index: number | undefined,
+  remember: boolean,
+): Partial<WorkspaceLayoutState> {
+  return updateActive(state, (workspace) => {
+    const pane = findPane(workspace.root, paneId ?? workspace.focusedPaneId);
+    if (!pane) return workspace;
+    const { root, removed, collapsedInto } = removeTab(
+      workspace.root,
+      pane.id,
+      index ?? pane.selectedIndex,
+    );
+    if (!removed) return workspace;
+    const focusedPaneId =
+      collapsedInto && workspace.focusedPaneId === pane.id
+        ? collapsedInto
+        : workspace.focusedPaneId;
+    const next = withRoot(workspace, root, focusedPaneId);
+    return remember ? { ...next, closedTabs: pushClosed(workspace.closedTabs, [removed]) } : next;
+  });
 }
 
 function pickIndex(which: TabChoice, current: number, length: number): number | null {
@@ -373,27 +400,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           }),
         ),
 
-      closeTab: (paneId, index) =>
-        set((state) =>
-          updateActive(state, (workspace) => {
-            const pane = findPane(workspace.root, paneId ?? workspace.focusedPaneId);
-            if (!pane) return workspace;
-            const { root, removed, collapsedInto } = removeTab(
-              workspace.root,
-              pane.id,
-              index ?? pane.selectedIndex,
-            );
-            if (!removed) return workspace;
-            const focusedPaneId =
-              collapsedInto && workspace.focusedPaneId === pane.id
-                ? collapsedInto
-                : workspace.focusedPaneId;
-            return {
-              ...withRoot(workspace, root, focusedPaneId),
-              closedTabs: pushClosed(workspace.closedTabs, [removed]),
-            };
-          }),
-        ),
+      closeTab: (paneId, index) => set((state) => closeTabIn(state, paneId, index, true)),
+
+      dismissTab: (paneId, index) => set((state) => closeTabIn(state, paneId, index, false)),
 
       reopenClosedTab: () =>
         set((state) => {

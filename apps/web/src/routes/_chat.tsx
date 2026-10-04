@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
@@ -25,7 +25,11 @@ import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { WorkspaceHost } from "~/workspace/WorkspaceHost";
+import { selectActiveWorkspace, useWorkspaceStore } from "~/workspace/workspaceStore";
+import { hasWorkspaceLayout } from "~/workspace/workspaceView";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -197,10 +201,23 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  // Phones keep the single routed chat; everywhere else the thread routes
+  // render the split workspace. The index keeps it too once it holds a layout,
+  // so closing a tab does not drop the panes.
+  const isMobileViewport = useMediaQuery("max-sm");
+  const isIndex = useLocation({ select: (location) => location.pathname === "/" });
+  const hasLayout = useWorkspaceStore((state) => hasWorkspaceLayout(selectActiveWorkspace(state)));
+  const showWorkspace = !isMobileViewport && (threadTarget !== null || (isIndex && hasLayout));
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
+      {showWorkspace ? (
+        <WorkspaceHost routeTarget={threadTarget} />
+      ) : threadTarget ? (
+        <ThreadRouteView target={threadTarget} />
+      ) : (
+        <Outlet />
+      )}
     </>
   );
 }

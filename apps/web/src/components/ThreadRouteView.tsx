@@ -45,11 +45,23 @@ import { usePaneContext } from "../workspace/paneContext";
 export function ThreadRouteView({
   target,
   inspector,
+  frame = "page",
+  reserveTitleBarControlInset,
+  titleBarDragRegion,
 }: {
   target: ThreadRouteTarget;
   /** "none" leaves the right panel to the workspace host. */
   inspector?: "inline" | "none";
+  /** "pane" fills a workspace pane; the host owns the page's main landmark and height. */
+  frame?: "page" | "pane";
+  reserveTitleBarControlInset?: boolean;
+  titleBarDragRegion?: boolean;
 }) {
+  const chatViewFrameProps = {
+    ...(inspector ? { inspector } : {}),
+    ...(reserveTitleBarControlInset === undefined ? {} : { reserveTitleBarControlInset }),
+    ...(titleBarDragRegion === undefined ? {} : { titleBarDragRegion }),
+  };
   const pane = usePaneContext();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
@@ -201,7 +213,7 @@ export function ThreadRouteView({
           threadId={draftSession.threadId}
           routeKind="draft"
           forceExpandedMobileComposer
-          {...(inspector ? { inspector } : {})}
+          {...chatViewFrameProps}
         />
       );
     }
@@ -213,11 +225,16 @@ export function ThreadRouteView({
         threadId={target.threadRef.threadId}
         routeKind="server"
         threadSyncPhase={threadSyncPhase}
-        {...(inspector ? { inspector } : {})}
+        {...chatViewFrameProps}
       />
     );
   }
 
+  if (frame === "pane") {
+    return (
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">{view}</div>
+    );
+  }
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
       {view}
