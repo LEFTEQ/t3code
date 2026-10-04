@@ -19,10 +19,14 @@ const usageCommandOrder = new Map<KeybindingCommand, number>(
   [...METRIC_OPTIONS, ...WINDOW_OPTIONS].map((option, index) => [option.command, index]),
 );
 
-function compareUsageCommands(left: KeybindingCommand, right: KeybindingCommand): number | null {
-  const leftIndex = usageCommandOrder.get(left);
-  const rightIndex = usageCommandOrder.get(right);
-  return leftIndex !== undefined && rightIndex !== undefined ? leftIndex - rightIndex : null;
+/**
+ * Sort key that keeps the Usage page's command order. Ordered Usage commands
+ * sort ahead of the other `usage.` commands; everything else uses `fallback`.
+ * A key (rather than a pairwise special case) keeps the sort transitive.
+ */
+function usageAwareSortKey(command: KeybindingCommand, prefix: string, fallback: string): string {
+  const index = usageCommandOrder.get(command);
+  return index === undefined ? fallback : `${prefix}${String(index).padStart(2, "0")}`;
 }
 
 export type KeybindingSource = "Default" | "Custom" | "Project";
@@ -215,9 +219,9 @@ export function buildKeybindingRows(
   });
 
   rowsWithConflicts.sort((left, right) => {
-    const commandCompare =
-      compareUsageCommands(left.command, right.command) ??
-      left.command.localeCompare(right.command);
+    const commandCompare = usageAwareSortKey(left.command, "usage.", left.command).localeCompare(
+      usageAwareSortKey(right.command, "usage.", right.command),
+    );
     if (commandCompare !== 0) return commandCompare;
     return left.key.localeCompare(right.key);
   });
@@ -290,9 +294,10 @@ export function buildKeybindingCommandOptions(
   for (const binding of keybindings) {
     commands.add(binding.command);
   }
-  return [...commands].toSorted(
-    (left, right) =>
-      compareUsageCommands(left, right) ?? commandLabel(left).localeCompare(commandLabel(right)),
+  return [...commands].toSorted((left, right) =>
+    usageAwareSortKey(left, "Usage: ", commandLabel(left)).localeCompare(
+      usageAwareSortKey(right, "Usage: ", commandLabel(right)),
+    ),
   );
 }
 

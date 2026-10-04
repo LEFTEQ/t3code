@@ -1,7 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
@@ -24,12 +23,9 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
-import {
-  buildThreadRouteParams,
-  resolveThreadRouteRenderState,
-  type ThreadRouteTarget,
-} from "../threadRoutes";
+import { resolveThreadRouteRenderState, type ThreadRouteTarget } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
+import { usePaneContext } from "../workspace/paneContext";
 
 /**
  * The single chat surface behind both `/draft/$draftId` and
@@ -43,9 +39,18 @@ import { resolveThreadSyncPhase } from "../threadSync";
  *
  * Rendered by the `_chat` layout rather than by the two leaf routes, since
  * an element only survives a route swap when the same parent renders it.
+ * Inside a workspace pane the same promotion and redirects go to that pane
+ * through `usePaneContext()` instead of the router.
  */
-export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
-  const navigate = useNavigate();
+export function ThreadRouteView({
+  target,
+  inspector,
+}: {
+  target: ThreadRouteTarget;
+  /** "none" leaves the right panel to the workspace host. */
+  inspector?: "inline" | "none";
+}) {
+  const pane = usePaneContext();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
@@ -130,6 +135,15 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     markPromotedDraftThreadByRef(inferredThreadRef);
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
+  // Effect events read the latest target and pane without restarting the
+  // hero-transition wait whenever the parent hands over a fresh target object.
+  const replaceWithPromotedThread = useEffectEvent((threadRef: ScopedThreadRef) => {
+    void pane.replaceTarget(target, { kind: "server", threadRef });
+  });
+  const dismissDraftTarget = useEffectEvent(() => {
+    void pane.dismissTarget(target);
+  });
+
   useEffect(() => {
     if (!canonicalThreadRef) {
       return;
@@ -139,23 +153,19 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       if (cancelled) {
         return;
       }
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(canonicalThreadRef),
-        replace: true,
-      });
+      replaceWithPromotedThread(canonicalThreadRef);
     });
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef]);
 
   useEffect(() => {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
       return;
     }
-    void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate, target.kind]);
+    dismissDraftTarget();
+  }, [canonicalThreadRef, draftSession, target.kind]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -168,10 +178,10 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
       if (environmentHasAnyThreads) {
-        void navigate({ to: "/", replace: true });
+        void pane.dismissTarget(target);
       }
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [bootstrapComplete, environmentHasAnyThreads, pane, renderState, target]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -191,6 +201,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
           threadId={draftSession.threadId}
           routeKind="draft"
           forceExpandedMobileComposer
+          {...(inspector ? { inspector } : {})}
         />
       );
     }
@@ -202,6 +213,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         threadId={target.threadRef.threadId}
         routeKind="server"
         threadSyncPhase={threadSyncPhase}
+        {...(inspector ? { inspector } : {})}
       />
     );
   }

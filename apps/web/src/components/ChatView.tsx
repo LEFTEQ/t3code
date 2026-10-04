@@ -291,7 +291,6 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
@@ -482,6 +481,7 @@ import {
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
+import { usePaneContext } from "../workspace/paneContext";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -741,6 +741,9 @@ function isCompactCommandMessage(message: ChatMessage): boolean {
   return message.role === "user" && text === "/compact" && !message.attachments?.length;
 }
 
+// "none" leaves the right panel to the workspace host instead of rendering it beside this chat.
+type ChatViewInspector = "inline" | "none";
+
 type ChatViewProps =
   | {
       environmentId: EnvironmentId;
@@ -748,6 +751,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      inspector?: ChatViewInspector;
       threadSyncPhase?: ThreadSyncPhase | null;
       routeKind: "server";
       draftId?: never;
@@ -758,6 +762,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      inspector?: ChatViewInspector;
       threadSyncPhase?: never;
       routeKind: "draft";
       draftId: DraftId;
@@ -1481,7 +1486,16 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    inspector = "inline",
   } = props;
+  // Several chats can be mounted side by side; only the focused pane owns
+  // window-level keys, paste, composer focus and the palette's composer handle.
+  const pane = usePaneContext();
+  const paneIsFocused = pane.isFocused;
+  const paneIsFocusedRef = useRef(paneIsFocused);
+  useLayoutEffect(() => {
+    paneIsFocusedRef.current = paneIsFocused;
+  }, [paneIsFocused]);
   const draftId = routeKind === "draft" ? props.draftId : null;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
@@ -1664,7 +1678,8 @@ export default function ChatView(props: ChatViewProps) {
   const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
-  const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const sharedComposerRef = useComposerHandleContext();
+  const composerRef = (paneIsFocused ? sharedComposerRef : null) ?? localComposerRef;
   const branchToolbarRef = useRef<BranchToolbarHandle>(null);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
@@ -2123,13 +2138,14 @@ export default function ChatView(props: ChatViewProps) {
   // timestamp backwards).
   useEffect(() => {
     const completedAt = serverThread?.latestTurn?.completedAt;
-    if (!serverThread?.id || !completedAt) return;
+    if (!serverThread?.id || !completedAt || !paneIsFocused) return;
     markThreadVisited(
       scopedThreadKey(scopeThreadRef(serverThread.environmentId, serverThread.id)),
       completedAt,
     );
   }, [
     markThreadVisited,
+    paneIsFocused,
     serverThread?.environmentId,
     serverThread?.id,
     serverThread?.latestTurn?.completedAt,
@@ -2525,10 +2541,7 @@ export default function ChatView(props: ChatViewProps) {
           },
         );
         if (routeKind !== "draft" || draftId !== storedDraftSession.draftId) {
-          await navigate({
-            to: "/draft/$draftId",
-            params: buildDraftThreadRouteParams(storedDraftSession.draftId),
-          });
+          await pane.openTarget({ kind: "draft", draftId: storedDraftSession.draftId });
         }
         return storedDraftSession.threadId;
       }
@@ -2560,10 +2573,7 @@ export default function ChatView(props: ChatViewProps) {
         interactionMode: DEFAULT_INTERACTION_MODE,
         ...input,
       });
-      await navigate({
-        to: "/draft/$draftId",
-        params: buildDraftThreadRouteParams(nextDraftId),
-      });
+      await pane.openTarget({ kind: "draft", draftId: nextDraftId });
       return nextThreadId;
     },
     [
@@ -2572,7 +2582,7 @@ export default function ChatView(props: ChatViewProps) {
       getDraftSession,
       getDraftSessionByLogicalProjectKey,
       isServerThread,
-      navigate,
+      pane,
       projectGroupingSettings,
       routeKind,
       settings,
@@ -3982,7 +3992,13 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
-  useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
+  useEffect(
+    () =>
+      subscribeSnapShotComposerFocus(() => {
+        if (paneIsFocusedRef.current) focusComposer();
+      }),
+    [focusComposer],
+  );
   const scheduleComposerFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -5209,7 +5225,7 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanel();
+        if (action === "toggle-panel" && paneIsFocusedRef.current) togglePreviewPanel();
       }),
     [togglePreviewPanel],
   );
@@ -5512,8 +5528,9 @@ export default function ChatView(props: ChatViewProps) {
           if (
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
-              event.target !== document.body &&
-              event.target !== document.documentElement) ||
+              ((event.target !== document.body && event.target !== document.documentElement) ||
+                // Keys aimed at no element belong to the focused pane only.
+                !paneIsFocusedRef.current)) ||
             event.defaultPrevented ||
             event.isComposing ||
             event.altKey ||
@@ -5741,14 +5758,14 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThread?.id, routeThreadKey]);
 
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || !paneIsFocused) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen, paneIsFocused]);
 
   // Tabbing back into the app lands focus wherever it last was, often the right panel or the
   // body. Put it in the composer unless something that takes typing already holds it. The
@@ -5756,7 +5773,8 @@ export default function ChatView(props: ChatViewProps) {
   // terminal is a surface and is recognized by the predicate instead. Mobile is left alone so
   // returning to the app does not raise the keyboard.
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport || !paneIsFocused)
+      return;
     let frame: number | null = null;
     const onWindowFocus = () => {
       if (frame !== null) window.cancelAnimationFrame(frame);
@@ -5775,7 +5793,13 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("focus", onWindowFocus);
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen]);
+  }, [
+    activeThread?.id,
+    focusComposer,
+    isMobileViewport,
+    paneIsFocused,
+    terminalUiState.terminalOpen,
+  ]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -6685,6 +6709,7 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   useEffect(() => {
+    if (!paneIsFocused) return;
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
@@ -6967,12 +6992,14 @@ export default function ChatView(props: ChatViewProps) {
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
     composerRef,
+    paneIsFocused,
   ]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
   // Route it to the composer like a typed key, which also expands it.
   useEffect(() => {
+    if (!paneIsFocused) return;
     const keyHandler = (event: KeyboardEvent) => {
       if (
         shouldRedirectInputToComposer(event) &&
@@ -7005,7 +7032,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, composerRef, paneIsFocused]);
 
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
@@ -8074,11 +8101,9 @@ export default function ChatView(props: ChatViewProps) {
                         actionProps: {
                           children: "Open thread",
                           onClick: () => {
-                            void navigate({
-                              to: "/$environmentId/$threadId",
-                              params: buildThreadRouteParams(
-                                scopeThreadRef(environmentId, retainedThreadId),
-                              ),
+                            void pane.openTarget({
+                              kind: "server",
+                              threadRef: scopeThreadRef(environmentId, retainedThreadId),
                             });
                           },
                         },
@@ -8170,7 +8195,7 @@ export default function ChatView(props: ChatViewProps) {
                       return;
                     }
                     restoreFailedDraft();
-                    void navigate({ to: "/draft/$draftId", params: { draftId } });
+                    void pane.openTarget({ kind: "draft", draftId });
                     toastManager.close(recoveryToastId);
                   },
                 },
@@ -8466,10 +8491,7 @@ export default function ChatView(props: ChatViewProps) {
                 actionProps: {
                   children: "Open",
                   onClick: () => {
-                    void navigate({
-                      to: "/$environmentId/$threadId",
-                      params: buildThreadRouteParams(backgroundThreadRef),
-                    });
+                    void pane.openTarget({ kind: "server", threadRef: backgroundThreadRef });
                   },
                 },
               }),
@@ -8563,7 +8585,7 @@ export default function ChatView(props: ChatViewProps) {
               actionProps: {
                 children: "Open draft",
                 onClick: () => {
-                  void navigate({ to: "/draft/$draftId", params: { draftId } });
+                  void pane.openTarget({ kind: "draft", draftId });
                 },
               },
             }),
@@ -9142,15 +9164,12 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     if (failure === null) {
-      const navigateResult = await settlePromise(() =>
-        navigate({
-          to: "/$environmentId/$threadId",
-          params: {
-            environmentId: activeThread.environmentId,
-            threadId: nextThreadId,
-          },
-        }),
-      );
+      const navigateResult = await settlePromise(async () => {
+        await pane.openTarget({
+          kind: "server",
+          threadRef: scopeThreadRef(activeThread.environmentId, nextThreadId),
+        });
+      });
       failure = navigateResult._tag === "Failure" ? navigateResult : null;
     }
 
@@ -9194,7 +9213,7 @@ export default function ChatView(props: ChatViewProps) {
     isConnecting,
     isSendBusy,
     isServerThread,
-    navigate,
+    pane,
     resetLocalDispatch,
     defaultRuntimeMode,
     startThreadTurn,
@@ -9723,7 +9742,7 @@ export default function ChatView(props: ChatViewProps) {
           ) : null}
         </WizardPopup>
       </Dialog>
-      {rightPanelControlsAtRoot ? panelLayoutControls : null}
+      {rightPanelControlsAtRoot && paneIsFocused ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -9744,7 +9763,9 @@ export default function ChatView(props: ChatViewProps) {
               className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
             />
           ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel && paneIsFocused
+            ? panelLayoutControls
+            : null}
           <ChatHeader
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
@@ -10253,7 +10274,10 @@ export default function ChatView(props: ChatViewProps) {
         ))}
       </div>
 
-      {rightPanelPresent && !shouldUseRightPanelSheet && activeThreadRef ? (
+      {inspector === "inline" &&
+      rightPanelPresent &&
+      !shouldUseRightPanelSheet &&
+      activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
           widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
@@ -10299,7 +10323,10 @@ export default function ChatView(props: ChatViewProps) {
           {rightPanelContent}
         </RightPanelTabs>
       ) : null}
-      {rightPanelPresent && shouldUseRightPanelSheet && activeThreadRef ? (
+      {inspector === "inline" &&
+      rightPanelPresent &&
+      shouldUseRightPanelSheet &&
+      activeThreadRef ? (
         <RightPanelSheet
           animationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           open={rightPanelOpen}

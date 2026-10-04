@@ -7,6 +7,8 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
   type ModelPickerJumpKeybindingCommand,
   type ThreadJumpKeybindingCommand,
+  WORKSPACE_KEYBINDING_COMMANDS,
+  type WorkspaceKeybindingCommand,
 } from "@t3tools/contracts";
 import { isElectron } from "./env";
 import { isMacPlatform } from "./lib/utils";
@@ -144,6 +146,31 @@ function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
   return options?.platform ?? navigator.platform;
 }
 
+let workspaceShortcutsActive = false;
+const workspaceShortcutsListeners = new Set<() => void>();
+
+/**
+ * Called by the workspace dispatcher while the workspace host is mounted.
+ * Every resolution reads it as `workspaceOpen`, so all window handlers agree
+ * whether a chord such as mod+w closes a tab or the right panel.
+ */
+export function setWorkspaceShortcutsActive(active: boolean): void {
+  workspaceShortcutsActive = active;
+  for (const listener of workspaceShortcutsListeners) listener();
+}
+
+/** `useSyncExternalStore` pair for UI that only exists while the workspace is mounted. */
+export function subscribeWorkspaceShortcutsActive(listener: () => void): () => void {
+  workspaceShortcutsListeners.add(listener);
+  return () => {
+    workspaceShortcutsListeners.delete(listener);
+  };
+}
+
+export function isWorkspaceShortcutsActive(): boolean {
+  return workspaceShortcutsActive;
+}
+
 function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatchContext {
   return {
     terminalFocus: false,
@@ -152,9 +179,31 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     previewOpen: false,
     isWeb: !isElectron,
     isDesktop: isElectron,
+    isMac: isMacPlatform(resolvePlatform(options)),
     editableFocus: false,
+    workspaceOpen: workspaceShortcutsActive,
     ...options?.context,
   };
+}
+
+const WORKSPACE_COMMANDS: ReadonlySet<string> = new Set(WORKSPACE_KEYBINDING_COMMANDS);
+
+export function isWorkspaceCommand(
+  command: KeybindingCommand | null,
+): command is WorkspaceKeybindingCommand {
+  return command !== null && WORKSPACE_COMMANDS.has(command);
+}
+
+/**
+ * Whether the event resolves to a workspace command. Surfaces that consume
+ * keys themselves (the terminal) yield these so pane navigation keeps working.
+ */
+export function isWorkspaceShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return isWorkspaceCommand(resolveShortcutCommand(event, keybindings, options));
 }
 
 function evaluateWhenNode(node: KeybindingWhenNode, context: ShortcutMatchContext): boolean {

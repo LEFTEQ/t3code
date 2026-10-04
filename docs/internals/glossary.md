@@ -11,6 +11,7 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Client         | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server. |
 | Project        | An environment-local workspace record rooted at a directory.                                      |
 | Workspace root | The project's base filesystem directory on the environment.                                       |
+| Workspace (UI) | A named layout of split panes, each a strip of thread tabs. Not workspace root or workspace mode. |
 | Worktree       | A separate Git checkout a thread can use instead of the project's main checkout.                  |
 | Thread         | The durable conversation and work history for a project. It survives provider process exits.      |
 | Turn           | One user-to-agent work cycle. Provider work can finish before checkpoint and diff work settles.   |

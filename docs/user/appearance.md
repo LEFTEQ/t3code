@@ -23,9 +23,9 @@ of the selected theme.
 
 ## Motion
 
-The main sidebar, right panel, and terminal drawer open and close immediately by default. Move the
-**Panel animations** slider above 0 ms to add motion, up to 400 ms, unless reduced motion is enabled
-in your operating system. Moving between threads always snaps to the selected thread's panel state
+The main sidebar, right panel, terminal drawer, and workspace panes animate for 250 ms by default.
+Move the **Panel animations** slider between 0 ms (no motion) and 400 ms; reduced motion in your
+operating system turns it off. Moving between threads always snaps to the selected thread's panel state
 without replaying its transitions.
 
 ## Custom themes

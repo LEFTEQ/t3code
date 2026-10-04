@@ -35,6 +35,7 @@ import {
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
+  type WorkspaceKeybindingCommand,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
@@ -42,20 +43,29 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  BellIcon,
   ChartNoAxesColumnIcon,
+  Columns2Icon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
   LinkIcon,
+  Maximize2Icon,
   MessageSquareIcon,
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
+  PanelsTopLeftIcon,
+  PencilIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  Rows2Icon,
   SettingsIcon,
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  XIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -66,6 +76,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -178,7 +189,15 @@ import {
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
 import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
-import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
+import {
+  isWorkspaceShortcutsActive,
+  resolveShortcutCommand,
+  subscribeWorkspaceShortcutsActive,
+  threadJumpIndexFromCommand,
+} from "../keybindings";
+import { listPanes } from "../workspace/paneTree";
+import { dispatchWorkspaceCommand } from "../workspace/useWorkspaceShortcuts";
+import { useWorkspaceStore } from "../workspace/workspaceStore";
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
 import { Button } from "./ui/button";
 import { Kbd, KbdGroup } from "./ui/kbd";
@@ -482,6 +501,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
+  const openWorkspaces = useCallback(() => dispatch({ _tag: "OpenWorkspaces" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
@@ -569,6 +589,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         void navigate({ to: "/usage" });
         return;
       }
+      // The workspace dispatcher opens the switcher; while the palette is
+      // open it stands down, so the same chord closes it here.
+      if (command === "workspace.switcher") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        return;
+      }
       const mode = overlayModeForCommand(command);
       if (mode === null) {
         return;
@@ -598,6 +626,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
+        } else if (detail.open === "workspaces") {
+          openWorkspaces();
         } else if (detail.open === "add-project") {
           openAddProject();
         } else if (detail.query !== undefined) {
@@ -610,7 +640,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [openAddProject, openNewThreadIn, openWorkspaces, setOpen],
   );
 
   return (
@@ -814,6 +844,13 @@ function OpenCommandPaletteDialog(props: {
     }
     return map;
   }, [environments, primaryEnvironmentId, providers]);
+  const workspaceOpen = useSyncExternalStore(
+    subscribeWorkspaceShortcutsActive,
+    isWorkspaceShortcutsActive,
+    () => false,
+  );
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
   const currentView = viewStack.at(-1) ?? null;
   const environmentIds = useMemo(
@@ -1785,6 +1822,152 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  // The switcher view always exists so ⌘P can open it; its rows only run
+  // commands while a workspace host is mounted.
+  const workspaceSwitcherItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:switch-workspace",
+    searchTerms: ["switch workspace", "workspaces", "layout", "go to workspace"],
+    title: "Switch workspace",
+    icon: <PanelsTopLeftIcon className={ITEM_ICON_CLASS} />,
+    addonIcon: <PanelsTopLeftIcon className={ADDON_ICON_CLASS} />,
+    shortcutCommand: "workspace.switcher",
+    groups: [
+      {
+        value: "workspaces",
+        label: "Workspaces",
+        items: [
+          ...workspaces.map((workspace): CommandPaletteActionItem => {
+            const panes = listPanes(workspace.root);
+            const tabCount = panes.reduce((total, pane) => total + pane.tabs.length, 0);
+            return {
+              kind: "action",
+              value: `workspace:${workspace.id}`,
+              title: workspace.name,
+              description: `${panes.length} ${panes.length === 1 ? "pane" : "panes"} · ${tabCount} ${tabCount === 1 ? "tab" : "tabs"}`,
+              searchTerms: [workspace.name, "workspace"],
+              icon: <PanelsTopLeftIcon className={ITEM_ICON_CLASS} />,
+              titleTrailingContent:
+                workspace.id === activeWorkspaceId ? (
+                  <span className="text-xs text-muted-foreground/70">Current</span>
+                ) : undefined,
+              run: async () => {
+                useWorkspaceStore.getState().selectWorkspace({ id: workspace.id });
+              },
+            };
+          }),
+          {
+            kind: "action",
+            value: "workspace:new",
+            title: "New workspace",
+            searchTerms: ["new workspace", "create workspace"],
+            icon: <PlusIcon className={ITEM_ICON_CLASS} />,
+            shortcutCommand: "workspace.new",
+            run: async () => {
+              dispatchWorkspaceCommand("workspace.new");
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  if (workspaceOpen) {
+    actionItems.push(workspaceSwitcherItem);
+    const workspaceCommandItems: ReadonlyArray<{
+      readonly command: WorkspaceKeybindingCommand;
+      readonly title: string;
+      readonly searchTerms: ReadonlyArray<string>;
+      readonly icon: ReactNode;
+    }> = [
+      {
+        command: "workspace.splitRight",
+        title: "Split pane right",
+        searchTerms: ["split", "pane", "right", "side by side"],
+        icon: <Columns2Icon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "workspace.splitDown",
+        title: "Split pane down",
+        searchTerms: ["split", "pane", "down", "stack"],
+        icon: <Rows2Icon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "pane.zoom",
+        title: "Zoom pane",
+        searchTerms: ["zoom", "maximize", "pane", "focus"],
+        icon: <Maximize2Icon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "pane.equalize",
+        title: "Equalize panes",
+        searchTerms: ["equalize", "balance", "even", "panes"],
+        icon: <Columns2Icon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "tab.close",
+        title: "Close tab",
+        searchTerms: ["close tab", "close thread tab"],
+        icon: <XIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "tab.reopen",
+        title: "Reopen closed tab",
+        searchTerms: ["reopen", "restore tab", "undo close"],
+        icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "tab.closeOthers",
+        title: "Close other tabs",
+        searchTerms: ["close others", "close other tabs"],
+        icon: <XIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "tab.rename",
+        title: "Rename tab",
+        searchTerms: ["rename tab", "rename thread", "title"],
+        icon: <PencilIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "workspace.rename",
+        title: "Rename workspace",
+        searchTerms: ["rename workspace"],
+        icon: <PencilIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "workspace.close",
+        title: "Close workspace",
+        searchTerms: ["close workspace", "remove workspace"],
+        icon: <XIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "attention.jumpLatest",
+        title: "Jump to waiting agent",
+        searchTerms: ["waiting", "needs input", "attention", "unread", "jump"],
+        icon: <BellIcon className={ITEM_ICON_CLASS} />,
+      },
+      {
+        command: "attention.list",
+        title: "Show waiting agents",
+        searchTerms: ["waiting", "notifications", "attention", "needs input"],
+        icon: <BellIcon className={ITEM_ICON_CLASS} />,
+      },
+    ];
+    for (const item of workspaceCommandItems) {
+      actionItems.push({
+        kind: "action",
+        value: `action:${item.command}`,
+        title: item.title,
+        searchTerms: item.searchTerms,
+        icon: item.icon,
+        shortcutCommand: item.command,
+        run: async () => {
+          dispatchWorkspaceCommand(item.command);
+        },
+      });
+    }
+  }
+
   if (activeThreadReferenceCopyTarget !== null) {
     actionItems.push({
       kind: "action",
@@ -1981,6 +2164,20 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push(changeAppearanceItem);
 
   useLayoutEffect(() => {
+    if (openIntent?.kind !== "workspaces") return;
+    clearOpenIntent();
+    browseNavigation.invalidate();
+    cloneLookupGeneration.current += 1;
+    setIsRemoteProjectLookingUp(false);
+    setAddProjectCloneFlow(null);
+    setViewStack([]);
+    pushPaletteView({
+      addonIcon: <PanelsTopLeftIcon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "workspaces", label: "Workspaces", items: [] }],
+    });
+  }, [browseNavigation, clearOpenIntent, openIntent, pushPaletteView]);
+
+  useLayoutEffect(() => {
     if (openIntent?.kind !== "change-theme") return;
     clearOpenIntent();
     browseNavigation.invalidate();
@@ -2123,7 +2320,9 @@ function OpenCommandPaletteDialog(props: {
         ? changeThemeItem.groups
         : currentView?.groups[0]?.value === "appearance"
           ? changeAppearanceItem.groups
-          : (currentView?.groups ?? rootGroups);
+          : currentView?.groups[0]?.value === "workspaces"
+            ? workspaceSwitcherItem.groups
+            : (currentView?.groups ?? rootGroups);
 
   const filteredGroups = filterCommandPaletteGroups({
     activeGroups,

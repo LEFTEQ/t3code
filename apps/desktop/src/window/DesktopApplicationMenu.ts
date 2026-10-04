@@ -196,7 +196,11 @@ export const make = Effect.gen(function* () {
                 },
                 { type: "separator" as const },
               ]),
-          { role: environment.platform === "darwin" ? "close" : "quit" },
+          // ⌘W closes the focused workspace tab in the renderer, so the
+          // native window close moves to cmux's ⌃⌘W instead of shadowing it.
+          environment.platform === "darwin"
+            ? { role: "close" as const, accelerator: "Ctrl+Cmd+W" }
+            : { role: "quit" as const },
         ],
       },
       {

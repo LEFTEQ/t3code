@@ -49,13 +49,13 @@ describe("KeybindingsSettings.logic", () => {
   it("orders Usage bindings and command choices like the page", () => {
     const expected = [
       "usage.cost",
-      "usage.open",
       "usage.tokens",
       "usage.limits",
       "usage.period.day",
       "usage.period.week",
       "usage.period.month",
       "usage.period.quarter",
+      "usage.open",
     ];
     const bindings = DEFAULT_RESOLVED_KEYBINDINGS.toReversed();
     expect(buildKeybindingRows(bindings, "usage").map((row) => row.command)).toEqual(expected);
@@ -281,9 +281,9 @@ describe("KeybindingsSettings.logic", () => {
     const rows = buildKeybindingRows(
       [
         {
-          command: "chat.new",
+          command: "commandPalette.toggle",
           shortcut: {
-            key: "n",
+            key: "k",
             modKey: true,
             metaKey: false,
             ctrlKey: false,
@@ -296,9 +296,9 @@ describe("KeybindingsSettings.logic", () => {
           },
         },
         {
-          command: "chat.new",
+          command: "commandPalette.toggle",
           shortcut: {
-            key: "o",
+            key: "p",
             modKey: true,
             metaKey: false,
             ctrlKey: false,

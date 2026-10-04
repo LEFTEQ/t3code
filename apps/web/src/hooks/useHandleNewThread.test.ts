@@ -25,6 +25,16 @@ const testState = vi.hoisted(() => {
       router.state.location.href = `/draft/${request.params.draftId}`;
     }),
   };
+  // The surface a workspace host provides; null = no host, the router fallback.
+  let providedPane: {
+    readonly paneId: string;
+    readonly isFocused: boolean;
+    readonly readTarget: () => null;
+    readonly readLocationKey: () => string;
+    readonly openTarget: ReturnType<typeof vi.fn>;
+    readonly replaceTarget: ReturnType<typeof vi.fn>;
+    readonly dismissTarget: ReturnType<typeof vi.fn>;
+  } | null = null;
   const draftStore = {
     getComposerDraft: vi.fn(() => ({})),
     getDraftSessionByLogicalProjectKey: vi.fn(() => storedDraft),
@@ -41,6 +51,12 @@ const testState = vi.hoisted(() => {
     draftStore,
     get projectFileRead() {
       return projectFileRead;
+    },
+    get providedPane() {
+      return providedPane;
+    },
+    providePane(pane: typeof providedPane) {
+      providedPane = pane;
     },
     get targetSettings() {
       return targetSettings;
@@ -61,6 +77,7 @@ const testState = vi.hoisted(() => {
       };
       router.state.location.href = "/";
       router.navigate.mockClear();
+      providedPane = null;
       draftStore.setDraftThreadContext.mockClear();
       draftStore.setLogicalProjectDraftThreadId.mockClear();
       projectFileRead = new Promise<null>((resolve) => {
@@ -124,6 +141,8 @@ vi.mock("@tanstack/react-router", () => ({
   useRouter: () => testState.router,
 }));
 vi.mock("react", () => ({
+  createContext: () => ({}),
+  use: () => testState.providedPane,
   useCallback: <T>(callback: T) => callback,
   useMemo: <T>(factory: () => T) => factory(),
 }));
@@ -173,7 +192,10 @@ vi.mock("../state/server", () => ({
   environmentServerConfigsAtom: {},
   primaryServerSettingsAtom: "primary-settings",
 }));
-vi.mock("../threadRoutes", () => ({ resolveThreadRouteTarget: () => null }));
+vi.mock("../threadRoutes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../threadRoutes")>()),
+  resolveThreadRouteTarget: () => null,
+}));
 vi.mock("../uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "remote-project",
   useUiStateStore: () => [],
@@ -286,4 +308,74 @@ describe.each([
       );
     },
   );
+});
+
+describe("useNewThreadHandler presentation", () => {
+  const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" } as never;
+  const paneSurface = (readLocationKey: () => string) => ({
+    paneId: "pane-a",
+    isFocused: true,
+    readTarget: () => null,
+    readLocationKey,
+    openTarget: vi.fn(),
+    replaceTarget: vi.fn(),
+    dismissTarget: vi.fn(),
+  });
+
+  it("opens the draft through the router when no workspace host is mounted", async () => {
+    testState.reset(null);
+    const pendingOpen = useNewThreadHandler()(projectRef);
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(testState.router.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "/draft/$draftId", params: { draftId: opened!.draftId } }),
+    );
+  });
+
+  it("opens the draft in the calling pane instead of navigating the app", async () => {
+    testState.reset(null);
+    const pane = paneSurface(() => "pane-a:empty");
+    testState.providePane(pane);
+    const pendingOpen = useNewThreadHandler()(projectRef);
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(pane.openTarget).toHaveBeenCalledWith(
+      { kind: "draft", draftId: opened!.draftId },
+      { replace: false },
+    );
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+  });
+
+  it("hands the draft to an explicit presenter", async () => {
+    testState.reset(null);
+    const pane = paneSurface(() => "pane-a:empty");
+    testState.providePane(pane);
+    const present = vi.fn();
+    const pendingOpen = useNewThreadHandler()(projectRef, { present });
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(present).toHaveBeenCalledWith(
+      { kind: "draft", draftId: opened!.draftId },
+      { replace: false },
+    );
+    expect(pane.openTarget).not.toHaveBeenCalled();
+  });
+
+  it("drops the request when its pane closes while defaults resolve", async () => {
+    testState.reset(null);
+    let locationKey = "pane-a:empty";
+    const pane = paneSurface(() => locationKey);
+    testState.providePane(pane);
+    const pendingOpen = useNewThreadHandler()(projectRef);
+
+    locationKey = "pane-a:closed";
+    testState.completeProjectFileRead(null);
+
+    expect(await pendingOpen).toBeNull();
+    expect(pane.openTarget).not.toHaveBeenCalled();
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+  });
 });
