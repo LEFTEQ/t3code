@@ -9,6 +9,7 @@ import {
   selectActiveWorkspace,
   selectFocusedPane,
   selectFocusedTab,
+  syncWorkspacesFromStorage,
   useWorkspaceStore,
 } from "./workspaceStore";
 
@@ -200,5 +201,32 @@ describe("workspaceStore", () => {
       expect(merged.workspaces).toHaveLength(1);
       expect(listPanes(merged.workspaces[0]!.root)).toHaveLength(1);
     }
+  });
+
+  it("adopts another tab's panes but keeps this tab's focus, ignoring bad or focus-only saves", async () => {
+    const key = "t3code:workspaces:v1";
+    const envelope = (state: unknown) => JSON.stringify({ state, version: 1 });
+    store().openTarget(thread("A"));
+    store().splitFocused("right", thread("B"));
+    const mine = { workspaces: store().workspaces, activeWorkspaceId: store().activeWorkspaceId };
+    store().focusDirection("left");
+    const focusOnly = {
+      workspaces: store().workspaces,
+      activeWorkspaceId: store().activeWorkspaceId,
+    };
+    store().openTarget(thread("C"));
+    const theirs = { workspaces: store().workspaces, activeWorkspaceId: store().activeWorkspaceId };
+    useWorkspaceStore.setState(mine);
+
+    expect(syncWorkspacesFromStorage({ key, newValue: envelope(focusOnly) })).toBeUndefined();
+    expect(syncWorkspacesFromStorage({ key, newValue: "{torn" })).toBeUndefined();
+    expect(
+      syncWorkspacesFromStorage({ key, newValue: envelope({ workspaces: [] }) }),
+    ).toBeUndefined();
+
+    useWorkspaceStore.persist.getOptions().storage!.setItem(key, { state: theirs, version: 1 });
+    await syncWorkspacesFromStorage({ key, newValue: envelope(theirs) });
+    expect(paneTabs()).toEqual([[thread("A"), thread("C")], [thread("B")]]);
+    expect(selectFocusedTab(store())).toEqual(thread("B"));
   });
 });

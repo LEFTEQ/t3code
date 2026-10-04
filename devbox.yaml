@@ -3,7 +3,7 @@ project: t3code
 resources:
   workspace: standard
   test: medium
-  memory: 4G
+  memory: 2G
 
 apps:
   server:

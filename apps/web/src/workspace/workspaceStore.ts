@@ -354,6 +354,73 @@ export function sanitizePersistedWorkspaces(persisted: unknown): WorkspaceLayout
   return { workspaces, activeWorkspaceId };
 }
 
+/**
+ * Takes a stored layout but keeps this tab's own view of it: the active
+ * workspace and each workspace's focused and zoomed pane, where they still
+ * exist. Two browser tabs share panes and tabs, never where they are looking.
+ */
+function keepLocalView(
+  incoming: WorkspaceLayoutState,
+  current: WorkspaceLayoutState,
+): WorkspaceLayoutState {
+  const workspaces = incoming.workspaces.map((workspace) => {
+    const local = current.workspaces.find((candidate) => candidate.id === workspace.id);
+    if (!local) return workspace;
+    const focusedPaneId = findPane(workspace.root, local.focusedPaneId)
+      ? local.focusedPaneId
+      : workspace.focusedPaneId;
+    const zoomedPaneId =
+      local.zoomedPaneId && findPane(workspace.root, local.zoomedPaneId)
+        ? local.zoomedPaneId
+        : null;
+    return focusedPaneId === workspace.focusedPaneId && zoomedPaneId === workspace.zoomedPaneId
+      ? workspace
+      : { ...workspace, focusedPaneId, zoomedPaneId };
+  });
+  const activeWorkspaceId = workspaces.some(
+    (workspace) => workspace.id === current.activeWorkspaceId,
+  )
+    ? current.activeWorkspaceId
+    : incoming.activeWorkspaceId;
+  return { workspaces, activeWorkspaceId };
+}
+
+/** The shared part of a layout, normalized so key order never matters. */
+function layoutSignature(state: unknown): string {
+  return JSON.stringify(
+    sanitizePersistedWorkspaces(state).workspaces.map((workspace) => [
+      workspace.id,
+      workspace.name,
+      workspace.root,
+      workspace.closedTabs,
+    ]),
+  );
+}
+
+/**
+ * Another browser tab saved its layout: adopt it through the persisted merge,
+ * which keeps this tab's view. Rehydrating never writes back, and a save that
+ * only moved the other tab's focus changes no layout, so two tabs never answer
+ * each other. Unreadable or other-version values are left alone rather than
+ * wiping this tab's panes.
+ */
+export function syncWorkspacesFromStorage(event: Pick<StorageEvent, "key" | "newValue">) {
+  if (event.key !== WORKSPACE_STORAGE_KEY || event.newValue === null) return;
+  let stored: unknown;
+  try {
+    stored = JSON.parse(event.newValue);
+  } catch {
+    // A torn or foreign write; the next valid save from that tab syncs.
+    return;
+  }
+  if (!isRecord(stored) || stored.version !== WORKSPACE_STORAGE_VERSION) return;
+  const { state } = stored;
+  if (!isRecord(state) || !Array.isArray(state.workspaces)) return;
+  if (!state.workspaces.some((workspace) => sanitizeWorkspace(workspace) !== null)) return;
+  if (layoutSignature(state) === layoutSignature(useWorkspaceStore.getState())) return;
+  return useWorkspaceStore.persist.rehydrate();
+}
+
 export const useWorkspaceStore = create<WorkspaceStoreState>()(
   persist(
     (set) => ({
@@ -617,7 +684,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       }),
       migrate: (persisted) => sanitizePersistedWorkspaces(persisted),
       // Same-version data skips `migrate`, so it is sanitized here as well.
-      merge: (persisted, current) => ({ ...current, ...sanitizePersistedWorkspaces(persisted) }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...keepLocalView(sanitizePersistedWorkspaces(persisted), current),
+      }),
     },
   ),
 );
@@ -638,4 +708,12 @@ function removeEverywhere(workspace: Workspace, tab: PaneTab): Workspace {
       ? collapsedInto
       : workspace.focusedPaneId;
   return withRoot(workspace, root, focusedPaneId);
+}
+
+// Lives as long as the store, not a mounted view: a tab parked on Settings
+// must still learn about the other tab's panes before it writes its own.
+if (typeof window !== "undefined") {
+  const onStorage = (event: StorageEvent) => void syncWorkspacesFromStorage(event);
+  window.addEventListener("storage", onStorage);
+  import.meta.hot?.dispose(() => window.removeEventListener("storage", onStorage));
 }

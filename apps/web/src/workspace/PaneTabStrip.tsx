@@ -3,6 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   CircleAlertIcon,
   CircleDashedIcon,
@@ -17,6 +18,7 @@ import {
 import {
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   memo,
   useCallback,
@@ -41,6 +43,7 @@ import { PanelTabCloseButton } from "../components/ui/panel-tab-close-button";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { isElectron } from "../env";
+import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { cn } from "../lib/utils";
 import { usePanelAnimationSettings } from "../panelAnimations";
@@ -216,6 +219,7 @@ const PaneTabItem = memo(function PaneTabItem({
   renaming,
   onStartRename,
   onRenameDone,
+  onOpenMenu,
 }: {
   readonly tab: PaneTab;
   readonly index: number;
@@ -225,6 +229,7 @@ const PaneTabItem = memo(function PaneTabItem({
   readonly renaming: boolean;
   readonly onStartRename: (tab: PaneTab) => void;
   readonly onRenameDone: (tab: PaneTab, originalTitle: string, title: string | null) => void;
+  readonly onOpenMenu: (position: { x: number; y: number }, threadRef: ScopedThreadRef) => void;
 }) {
   const shell = useThreadShell(tab.kind === "server" ? tab.threadRef : null);
   const attention = useTabAttention(tab);
@@ -248,6 +253,21 @@ const PaneTabItem = memo(function PaneTabItem({
       )}
       onAuxClick={(event) => {
         if (event.button === 1) close();
+      }}
+      onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => {
+        // Server threads get the same menu as the chat header and sidebar;
+        // drafts, like their sidebar rows, have none.
+        if (tab.kind !== "server" || renaming) return;
+        event.preventDefault();
+        // The context-menu key and Shift+F10 report no pointer position.
+        const rect = event.currentTarget.getBoundingClientRect();
+        const fromKeyboard = event.clientX === 0 && event.clientY === 0;
+        onOpenMenu(
+          fromKeyboard
+            ? { x: rect.left, y: rect.bottom + 4 }
+            : { x: event.clientX, y: event.clientY },
+          tab.threadRef,
+        );
       }}
     >
       <span className="flex size-3 shrink-0 items-center justify-center">
@@ -443,6 +463,16 @@ export function PaneTabStrip({
   const renameThread = useThreadRenamer();
 
   const startRename = useCallback((tab: PaneTab) => setRenamingKey(paneTabKey(tab)), []);
+  const startThreadRename = useCallback(
+    (threadRef: ScopedThreadRef) => startRename({ kind: "server", threadRef }),
+    [startRename],
+  );
+  // One menu hook for the whole strip; each tab passes its own thread.
+  const { openMenu } = useThreadActionMenu({
+    threadRef: null,
+    projectCwd: null,
+    onStartRename: startThreadRename,
+  });
   const finishRename = useCallback(
     (tab: PaneTab, originalTitle: string, title: string | null) => {
       setRenamingKey(null);
@@ -504,6 +534,7 @@ export function PaneTabStrip({
             renaming={renamingKey === paneTabKey(tab)}
             onStartRename={startRename}
             onRenameDone={finishRename}
+            onOpenMenu={openMenu}
           />
         ))}
       </div>
