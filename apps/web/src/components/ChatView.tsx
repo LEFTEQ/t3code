@@ -90,6 +90,7 @@ import { Atom } from "effect/unstable/reactivity";
 import {
   lazy,
   memo,
+  type ReactNode,
   type SetStateAction,
   Suspense,
   useCallback,
@@ -100,7 +101,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -482,6 +483,8 @@ import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { takeDirectPaneFocus, usePaneContext } from "../workspace/paneContext";
+import { paneServerThreadKeys, useWorkspaceInspector } from "../workspace/workspaceInspector";
+import { selectActiveWorkspace, useWorkspaceStore } from "../workspace/workspaceStore";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -741,8 +744,14 @@ function isCompactCommandMessage(message: ChatMessage): boolean {
   return message.role === "user" && text === "/compact" && !message.attachments?.length;
 }
 
-// "none" leaves the right panel to the workspace host instead of rendering it beside this chat.
+// Outside a workspace, "none" skips the right panel. Inside one the workspace
+// host owns it and only the focused pane renders into it, whatever this says.
 type ChatViewInspector = "inline" | "none";
+
+/** Renders beside the chat, or portaled into the workspace's inspector slot. */
+function renderInspectorAt(target: "here" | HTMLElement, node: ReactNode): ReactNode {
+  return target === "here" ? node : createPortal(node, target);
+}
 
 type ChatViewProps =
   | {
@@ -1496,6 +1505,7 @@ export default function ChatView(props: ChatViewProps) {
   // window-level keys, paste, composer focus and the palette's composer handle.
   const pane = usePaneContext();
   const paneIsFocused = pane.isFocused;
+  const workspaceInspector = useWorkspaceInspector();
   const paneIsFocusedRef = useRef(paneIsFocused);
   useLayoutEffect(() => {
     paneIsFocusedRef.current = paneIsFocused;
@@ -1776,7 +1786,11 @@ export default function ChatView(props: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
-  const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const viewportWantsRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  // Inside a workspace the row the inspector shares with the panes decides.
+  const shouldUseRightPanelSheet = workspaceInspector
+    ? workspaceInspector.sheet
+    : viewportWantsRightPanelSheet;
   const isMobileViewport = useMediaQuery("max-sm");
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
@@ -2109,6 +2123,23 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
+  // Inside a workspace the focused pane's inspector renders into the
+  // workspace's one right panel (D8-B) and other panes render none; outside
+  // it the `inspector` prop decides.
+  const inlineInspectorTarget: "here" | HTMLElement | null = workspaceInspector
+    ? paneIsFocused
+      ? workspaceInspector.slot
+      : null
+    : inspector === "inline"
+      ? "here"
+      : null;
+  const rendersInspectorSheet = workspaceInspector ? paneIsFocused : inspector === "inline";
+  const setWorkspaceInspectorMaximized = workspaceInspector?.setMaximized;
+  useEffect(() => {
+    if (!setWorkspaceInspectorMaximized || !paneIsFocused) return;
+    setWorkspaceInspectorMaximized(rightPanelMaximized);
+    return () => setWorkspaceInspectorMaximized(false);
+  }, [paneIsFocused, rightPanelMaximized, setWorkspaceInspectorMaximized]);
 
   useEffect(() => {
     if (!activeThreadRef) return;
@@ -2154,11 +2185,25 @@ export default function ChatView(props: ChatViewProps) {
     serverThread?.id,
     serverThread?.latestTurn?.completedAt,
   ]);
+  // In a workspace a pane keeps persistent terminals only for its own tabs.
+  // Tabs are single-instance, so no two panes mount the same thread's terminal.
+  const paneThreadKeysKey = useWorkspaceStore((state) =>
+    pane.paneId === null
+      ? null
+      : paneServerThreadKeys(selectActiveWorkspace(state).root, pane.paneId).join("\n"),
+  );
+  const paneOpenTerminalThreadKeys = useMemo(() => {
+    if (paneThreadKeysKey === null) return existingOpenTerminalThreadKeys;
+    const paneThreadKeys = new Set(paneThreadKeysKey.split("\n"));
+    return existingOpenTerminalThreadKeys.filter(
+      (threadKey) => threadKey === activeThreadKey || paneThreadKeys.has(threadKey),
+    );
+  }, [activeThreadKey, existingOpenTerminalThreadKeys, paneThreadKeysKey]);
   useEffect(() => {
     setMountedTerminalThreadKeys((currentThreadIds) => {
       const nextThreadIds = reconcileMountedTerminalThreadIds({
         currentThreadIds,
-        openThreadIds: existingOpenTerminalThreadKeys,
+        openThreadIds: paneOpenTerminalThreadKeys,
         activeThreadId: activeThreadKey,
         activeThreadTerminalOpen: activeTerminalDrawerPresence.present,
         maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
@@ -2168,7 +2213,7 @@ export default function ChatView(props: ChatViewProps) {
         ? currentThreadIds
         : nextThreadIds;
     });
-  }, [activeTerminalDrawerPresence.present, activeThreadKey, existingOpenTerminalThreadKeys]);
+  }, [activeTerminalDrawerPresence.present, activeThreadKey, paneOpenTerminalThreadKeys]);
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
   const activeProjectRef = useMemo(
     () =>
@@ -10281,59 +10326,60 @@ export default function ChatView(props: ChatViewProps) {
         ))}
       </div>
 
-      {inspector === "inline" &&
+      {inlineInspectorTarget !== null &&
       rightPanelPresent &&
       !shouldUseRightPanelSheet &&
-      activeThreadRef ? (
-        <RightPanelTabs
-          mode="inline"
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
-          open={rightPanelOpen}
-          maximized={rightPanelMaximized}
-          surfaces={renderedRightPanelSurfaces}
-          environmentId={activeThreadRef.environmentId}
-          activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-          pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
-          previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
-          onActivate={activateRightPanelSurface}
-          onCloseSurface={closeRightPanelSurface}
-          onRenameDevice={(surfaceId, title) => {
-            if (activeThreadRef)
-              useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-          }}
-          onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
-          onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
-          onCloseAllSurfaces={closeAllRightPanelSurfaces}
-          onCopyFilePath={copyRightPanelFilePath}
-          onAddBrowser={() => createBrowserSurface()}
-          onAddBrowserInProfile={createBrowserSurface}
-          onAddTerminal={addTerminalSurface}
-          onAddDiff={addDiffSurface}
-          onAddFiles={addFilesSurface}
-          onAddPullRequest={addPullRequestSurface}
-          onAddPullRequests={addPullRequestsSurface}
-          onAddAgents={addAgentsSurface}
-          onAddDevice={addDeviceSurface}
-          browserAvailable={isPreviewSupportedInRuntime()}
-          terminalAvailable={activeProject !== null}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
-          agentsAvailable
-          deviceAvailable={activeThreadRef !== null}
-          liveAgentCount={agentPanelModel.liveCount}
-        >
-          {rightPanelContent}
-        </RightPanelTabs>
-      ) : null}
-      {inspector === "inline" &&
-      rightPanelPresent &&
-      shouldUseRightPanelSheet &&
-      activeThreadRef ? (
+      activeThreadRef
+        ? renderInspectorAt(
+            inlineInspectorTarget,
+            <RightPanelTabs
+              mode="inline"
+              widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+              {...(workspaceInspector ? { clampContainer: workspaceInspector.clampContainer } : {})}
+              open={rightPanelOpen}
+              maximized={rightPanelMaximized}
+              surfaces={renderedRightPanelSurfaces}
+              environmentId={activeThreadRef.environmentId}
+              activeSurfaceId={renderedRightPanelSurface?.id ?? null}
+              pendingSurfaceIds={pendingFileSurfaceIds}
+              previewSessions={activePreviewState.sessions}
+              desktopByTabId={activePreviewState.desktopByTabId}
+              previewRuntimeTabId={resolvePreviewRuntimeTabId}
+              terminalLabelsById={activeTerminalLabelsById}
+              onActivate={activateRightPanelSurface}
+              onCloseSurface={closeRightPanelSurface}
+              onRenameDevice={(surfaceId, title) => {
+                if (activeThreadRef)
+                  useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
+              }}
+              onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
+              onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
+              onCloseAllSurfaces={closeAllRightPanelSurfaces}
+              onCopyFilePath={copyRightPanelFilePath}
+              onAddBrowser={() => createBrowserSurface()}
+              onAddBrowserInProfile={createBrowserSurface}
+              onAddTerminal={addTerminalSurface}
+              onAddDiff={addDiffSurface}
+              onAddFiles={addFilesSurface}
+              onAddPullRequest={addPullRequestSurface}
+              onAddPullRequests={addPullRequestsSurface}
+              onAddAgents={addAgentsSurface}
+              onAddDevice={addDeviceSurface}
+              browserAvailable={isPreviewSupportedInRuntime()}
+              terminalAvailable={activeProject !== null}
+              diffAvailable={isServerThread && isGitRepo}
+              filesAvailable={activeProject !== null}
+              pullRequestAvailable={pullRequestSurfaceAvailable}
+              pullRequestsAvailable={pullRequestsSurfaceAvailable}
+              agentsAvailable
+              deviceAvailable={activeThreadRef !== null}
+              liveAgentCount={agentPanelModel.liveCount}
+            >
+              {rightPanelContent}
+            </RightPanelTabs>,
+          )
+        : null}
+      {rendersInspectorSheet && rightPanelPresent && shouldUseRightPanelSheet && activeThreadRef ? (
         <RightPanelSheet
           animationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           open={rightPanelOpen}

@@ -80,10 +80,12 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
     container: { width: number; height: number },
   ) => void;
   setRatio: (splitId: string, ratio: number) => void;
-  createWorkspace: (opts?: { name?: string; seed?: PaneTab }) => void;
+  createWorkspace: (opts?: { name?: string | undefined; seed?: PaneTab | undefined }) => void;
   selectWorkspace: (which: WorkspaceChoice) => void;
   renameWorkspace: (id: string, name: string) => void;
   closeWorkspace: (id: string) => void;
+  /** Undoes a close: puts the workspace back at `index`, minus tabs opened elsewhere since. */
+  restoreWorkspace: (workspace: Workspace, index: number) => void;
 }
 
 const WORKSPACE_STORAGE_KEY = "t3code:workspaces:v1";
@@ -107,6 +109,15 @@ function nextWorkspaceName(workspaces: readonly Workspace[]): string {
   let index = workspaces.length + 1;
   while (taken.has(`Workspace ${index}`)) index += 1;
   return `Workspace ${index}`;
+}
+
+/** A requested name, numbered when another workspace already uses it ("vybava 2"). */
+function uniqueWorkspaceName(workspaces: readonly Workspace[], name: string): string {
+  const taken = new Set(workspaces.map((workspace) => workspace.name));
+  if (!taken.has(name)) return name;
+  let index = 2;
+  while (taken.has(`${name} ${index}`)) index += 1;
+  return `${name} ${index}`;
 }
 
 function freshLayout(): WorkspaceLayoutState {
@@ -503,7 +514,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           const workspaces = opts?.seed
             ? state.workspaces.map((workspace) => removeEverywhere(workspace, opts.seed!))
             : state.workspaces;
-          const name = opts?.name?.trim() || nextWorkspaceName(workspaces);
+          const requested = opts?.name?.trim();
+          const name = requested
+            ? uniqueWorkspaceName(workspaces, requested)
+            : nextWorkspaceName(workspaces);
           const workspace = createWorkspaceRecord(name, opts?.seed ? [opts.seed] : []);
           return { workspaces: [...workspaces, workspace], activeWorkspaceId: workspace.id };
         }),
@@ -542,6 +556,23 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
               ? workspaces[Math.min(index, workspaces.length - 1)]!.id
               : state.activeWorkspaceId;
           return { workspaces, activeWorkspaceId };
+        }),
+
+      restoreWorkspace: (closed, index) =>
+        set((state) => {
+          if (state.workspaces.some((workspace) => workspace.id === closed.id)) return {};
+          // One tab per thread: anything reopened elsewhere since the close stays there.
+          const openElsewhere = state.workspaces.flatMap((workspace) =>
+            listPanes(workspace.root).flatMap((pane) => pane.tabs),
+          );
+          const restored = openElsewhere.reduce(removeEverywhere, closed);
+          // Closing the last workspace left a blank stand-in; the restore replaces it.
+          const [only] = state.workspaces;
+          const blankStandIn =
+            state.workspaces.length === 1 && only?.root.kind === "pane" && !only.root.tabs.length;
+          const workspaces = blankStandIn ? [] : [...state.workspaces];
+          workspaces.splice(Math.min(Math.max(index, 0), workspaces.length), 0, restored);
+          return { workspaces, activeWorkspaceId: restored.id };
         }),
     }),
     {

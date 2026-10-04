@@ -137,6 +137,32 @@ describe("workspaceStore", () => {
     expect(store().workspaces.map((workspace) => workspace.name)).toEqual(["Workspace 1"]);
   });
 
+  it("restores a closed workspace in place, minus threads opened elsewhere since", () => {
+    store().newTab(thread("A"));
+    store().createWorkspace({ name: "Dev" });
+    store().newTab(thread("B"));
+    store().splitFocused("right", thread("C"));
+    const dev = active();
+    store().closeWorkspace(dev.id);
+    store().openTarget(thread("C"));
+
+    store().restoreWorkspace(dev, 1);
+    expect(store().workspaces.map((workspace) => workspace.name)).toEqual(["Workspace 1", "Dev"]);
+    expect(active().name).toBe("Dev");
+    expect(paneTabs()).toEqual([[thread("B")]]);
+
+    // Closing the last workspace leaves a blank stand-in that the restore replaces.
+    for (const workspace of store().workspaces) store().closeWorkspace(workspace.id);
+    store().restoreWorkspace(dev, 0);
+    expect(store().workspaces.map((workspace) => workspace.name)).toEqual(["Dev"]);
+  });
+
+  it("numbers a requested workspace name that is already taken", () => {
+    store().createWorkspace({ name: "vybava" });
+    store().createWorkspace({ name: "vybava" });
+    expect(active().name).toBe("vybava 2");
+  });
+
   it("swaps a promoted draft in place", () => {
     store().newTab(draft("d1"));
     store().newTab(thread("B"));

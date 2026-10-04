@@ -65,6 +65,7 @@ import {
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
+  isWorkspaceShortcut,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
@@ -755,6 +756,12 @@ export function TerminalViewport({
           isTerminalNewShortcut(event, currentKeybindings, options) ||
           isDiffToggleShortcut(event, currentKeybindings, options)
         ) {
+          return false;
+        }
+        // Pane, tab and workspace chords (⌥⇧+arrows, ⌘⇧+arrows, …) belong to
+        // the workspace even while a terminal has focus, ahead of the
+        // terminal's own word and line navigation below.
+        if (isWorkspaceShortcut(event, currentKeybindings, options)) {
           return false;
         }
 

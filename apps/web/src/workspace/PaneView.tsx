@@ -1,8 +1,19 @@
-import { type SyntheticEvent, memo, useEffect, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  type SyntheticEvent,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { ThreadRouteView } from "../components/ThreadRouteView";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import { cn } from "../lib/utils";
+import { type PaneAttentionEdge, usePaneAttentionEdge } from "./attention";
+import { AttentionList } from "./AttentionList";
 import { PaneContextProvider, markDirectPaneFocus } from "./paneContext";
 import { type PaneLeaf, type PaneRect, selectedTab } from "./paneTree";
 import { PaneTabStrip } from "./PaneTabStrip";
@@ -39,6 +50,38 @@ function EmptyPane({ isFocused }: { readonly isFocused: boolean }) {
   );
 }
 
+const EDGE_CLASS: Record<PaneAttentionEdge, string> = {
+  input: "bg-primary",
+  approval: "bg-warning",
+  error: "bg-error",
+};
+
+/**
+ * The pane's 2px top edge for its most urgent tab. Fades in once and settles;
+ * the last color is kept while it fades out.
+ */
+function PaneAttentionEdgeBar({ pane }: { readonly pane: PaneLeaf }) {
+  const edge = usePaneAttentionEdge(pane.tabs);
+  const [shownEdge, setShownEdge] = useState<PaneAttentionEdge>("input");
+  if (edge !== null && edge !== shownEdge) setShownEdge(edge);
+  return (
+    <div
+      aria-hidden
+      data-attention={edge ?? "none"}
+      className={cn(
+        "pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-(--workspace-focus-duration) ease-out",
+        EDGE_CLASS[shownEdge],
+        edge === null ? "opacity-0" : "opacity-100",
+      )}
+    />
+  );
+}
+
+// Inside a pane the collapsed-sidebar title-bar inset belongs to the strip, not the chat header.
+const PANE_CONTENT_STYLE = {
+  "--workspace-titlebar-content-left": "var(--workspace-gutter-start)",
+} as CSSProperties;
+
 /**
  * Everything inside a pane. Memoized apart from the pane's geometry so a
  * divider drag repositions panes without re-rendering their chats.
@@ -66,8 +109,14 @@ const PaneBody = memo(function PaneBody({
       data-focus-ring={showFocusRing ? "true" : "false"}
       className="@container/pane relative flex min-h-0 min-w-0 flex-1 flex-col after:pointer-events-none after:absolute after:inset-0 after:z-20 after:opacity-0 after:ring-1 after:ring-primary/60 after:ring-inset after:transition-opacity after:duration-(--workspace-focus-duration) after:ease-out data-[focus-ring=true]:after:opacity-100"
     >
-      <PaneTabStrip pane={pane} chrome={chrome} />
-      <div data-pane-content className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <PaneAttentionEdgeBar pane={pane} />
+      <PaneTabStrip pane={pane} chrome={chrome} isFocused={isFocused} />
+      {isFocused ? <AttentionList /> : null}
+      <div
+        data-pane-content
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        style={PANE_CONTENT_STYLE}
+      >
         <PaneContextProvider value={paneContext}>
           {tab ? (
             <ThreadRouteView

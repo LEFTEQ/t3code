@@ -239,6 +239,8 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
+import { WorkspacesSwitchRow } from "./sidebar/WorkspaceList";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -2178,6 +2180,7 @@ export default function Sidebar() {
   const threads = useThreadShells();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
+  const isMobileViewport = useMediaQuery("max-sm");
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -4996,6 +4999,8 @@ export default function Sidebar() {
           ) : null}
         </SidebarGroup>
       </SidebarContent>
+      {/* Phones keep the single routed chat, so there are no workspaces to go back to. */}
+      {isMobileViewport ? null : <WorkspacesSwitchRow />}
       <SidebarChromeFooter />
     </>
   );

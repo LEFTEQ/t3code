@@ -2007,6 +2007,77 @@ code {
   --chat-max-width: 100%;
 }
 
+/* Compact pane mode. Inside a narrow workspace pane (the `pane` size container
+   PaneView sets) the chat tightens its rhythm and an idle composer folds into
+   one prompt line until it is focused or holds a draft. Outside the workspace
+   no `pane` container exists, so none of this applies. Keep 45rem in step with
+   the `@max-[45rem]/pane:` variants in the chat components. */
+@container pane (max-width: 45rem) {
+  .chat-markdown p,
+  .chat-markdown ul,
+  .chat-markdown ol,
+  .chat-markdown blockquote,
+  .chat-markdown pre,
+  .chat-markdown .chat-markdown-table-container {
+    margin: 0.45rem 0;
+  }
+
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4,
+  .chat-markdown h5,
+  .chat-markdown h6 {
+    margin: 0.9rem 0 0.35rem;
+  }
+
+  /* Focus in the editor or its controls, or an open control menu, keeps the
+     full composer; the send/stop actions stay usable without expanding it. */
+  [data-chat-composer-compact-collapsible]:not(
+    :has(
+      [data-chat-composer-body]:focus-within,
+      [data-chat-composer-footer-controls]:focus-within,
+      [data-chat-composer-footer-controls] [data-popup-open]
+    )
+  ) {
+    & [data-chat-composer-body] {
+      padding-block: 0.5rem;
+      padding-inline: 2rem 7.5rem;
+    }
+
+    & [data-chat-composer-body]::before {
+      content: "❯";
+      position: absolute;
+      inset-inline-start: 0.875rem;
+      inset-block-start: 50%;
+      translate: 0 -50%;
+      font-family: var(--font-mono);
+      color: var(--muted-foreground);
+      pointer-events: none;
+    }
+
+    & .composer-tiptap {
+      min-height: 0;
+      max-height: 1.625em;
+      overflow: hidden;
+    }
+
+    & [data-chat-composer-footer] {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 1px;
+      z-index: 10;
+      height: auto;
+      padding-block: 0;
+      padding-inline: 0.5rem;
+    }
+
+    & [data-chat-composer-footer-controls] {
+      display: none;
+    }
+  }
+}
+
 :root[data-diff-color-scheme="blue-orange"] {
   --diff-addition: light-dark(var(--color-blue-600), var(--color-blue-400));
   --diff-deletion: light-dark(var(--color-orange-600), var(--color-orange-400));

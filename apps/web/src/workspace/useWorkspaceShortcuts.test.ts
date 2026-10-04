@@ -1,9 +1,19 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, ThreadId, type WorkspaceKeybindingCommand } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  type EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type WorkspaceKeybindingCommand,
+} from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import type { PaneTab } from "./paneTree";
-import { PANE_RESIZE_STEP_PX, runWorkspaceCommand } from "./useWorkspaceShortcuts";
+import type { DraftId } from "../composerDraftStore";
+import { listPanes, type PaneTab } from "./paneTree";
+import {
+  PANE_RESIZE_STEP_PX,
+  openSeededWorkspace,
+  runWorkspaceCommand,
+} from "./useWorkspaceShortcuts";
 import {
   sanitizePersistedWorkspaces,
   selectActiveWorkspace,
@@ -24,6 +34,7 @@ const run = (
   runWorkspaceCommand(command, store(), {
     containerSize: () => container,
     openNewTab: () => {},
+    openNewWorkspace: () => {},
     emit: () => {},
   });
 const rootRatio = () => {
@@ -62,5 +73,66 @@ describe("runWorkspaceCommand", () => {
     const resized = rootRatio();
     run("pane.resizeLeft", null);
     expect(rootRatio()).toBe(resized);
+  });
+});
+
+describe("openSeededWorkspace", () => {
+  const projectRef = scopeProjectRef("env-1" as EnvironmentId, ProjectId.make("vybava"));
+  const draft = (id: string): PaneTab => ({ kind: "draft", draftId: id as DraftId });
+  // Stands in for the new-thread handler: resolves to one draft and either presents it or,
+  // like the handler when that draft is already the focused tab, only returns it.
+  const newThreadHandler =
+    (
+      draftId: string,
+      presents: boolean,
+    ): Parameters<typeof openSeededWorkspace>[0]["handleNewThread"] =>
+    async (_projectRef, options) => {
+      if (presents) await options?.present?.(draft(draftId), { replace: false });
+      return { draftId: draftId as DraftId, threadId: ThreadId.make(`thread-${draftId}`) };
+    };
+  const activeTabs = () =>
+    listPanes(selectActiveWorkspace(store()).root).flatMap((pane) => pane.tabs);
+
+  it("names the new workspace after the project and seeds it with the project's draft", async () => {
+    await openSeededWorkspace({
+      projectRef,
+      projectName: "vybava",
+      handleNewThread: newThreadHandler("d1", true),
+    });
+    expect(selectActiveWorkspace(store()).name).toBe("vybava");
+    expect(activeTabs()).toEqual([draft("d1")]);
+
+    await openSeededWorkspace({
+      projectRef,
+      projectName: "vybava",
+      handleNewThread: newThreadHandler("d2", true),
+    });
+    expect(store().workspaces.map((workspace) => workspace.name)).toEqual([
+      "Workspace 1",
+      "vybava",
+      "vybava 2",
+    ]);
+  });
+
+  it("moves the project's draft in when it was already the focused tab", async () => {
+    store().newTab(draft("d1"));
+    await openSeededWorkspace({
+      projectRef,
+      projectName: "vybava",
+      handleNewThread: newThreadHandler("d1", false),
+    });
+    expect(selectActiveWorkspace(store()).name).toBe("vybava");
+    expect(activeTabs()).toEqual([draft("d1")]);
+    expect(store().workspaces[0]!.root).toMatchObject({ kind: "pane", tabs: [] });
+  });
+
+  it("opens a blank numbered workspace when there is no project to inherit", async () => {
+    await openSeededWorkspace({
+      projectRef: null,
+      projectName: undefined,
+      handleNewThread: newThreadHandler("d1", true),
+    });
+    expect(selectActiveWorkspace(store()).name).toBe("Workspace 2");
+    expect(activeTabs()).toEqual([]);
   });
 });

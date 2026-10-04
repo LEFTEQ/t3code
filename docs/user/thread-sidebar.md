@@ -3,6 +3,10 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
+On web and desktop, the sidebar opens on your [workspaces](./workspaces.md).
+Choose **All threads** at its bottom for the thread list this page describes, and
+**Workspaces** at the bottom of that list to switch back.
+
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model

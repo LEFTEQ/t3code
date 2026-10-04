@@ -1706,7 +1706,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "thinking" ||
                   row.kind === "worktree-setup"
                 ? "pb-2"
-                : "pb-4",
+                : "pb-4 @max-[45rem]/pane:pb-2.5",
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -1798,7 +1798,7 @@ function QueuedMessageTimelineRow({
         : "Sends after the messages above it";
   return (
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
-      <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
+      <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80 @max-[45rem]/pane:max-w-[92%] @max-[45rem]/pane:p-2.5">
         {text.length > 0 ? (
           <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
         ) : null}
@@ -2109,7 +2109,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground @max-[45rem]/pane:max-w-[92%] @max-[45rem]/pane:p-2.5">
         <MessageAuthorHeading>You</MessageAuthorHeading>
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
@@ -2225,7 +2225,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            <TooltipTrigger
+              render={
+                <p className="text-muted-foreground text-xs tabular-nums @max-[45rem]/pane:hidden" />
+              }
+            >
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
@@ -2339,7 +2343,7 @@ function TimelineRowTimestamp({
         render={
           <span
             className={cn(
-              "pointer-events-none absolute me-1 shrink-0 whitespace-nowrap rounded-md text-muted-foreground text-xs tabular-nums opacity-0 group-hover/timeline-row:pointer-events-auto group-hover/timeline-row:static group-hover/timeline-row:opacity-100 group-focus-within/timeline-row:pointer-events-auto group-focus-within/timeline-row:static group-focus-within/timeline-row:opacity-100",
+              "pointer-events-none absolute me-1 shrink-0 whitespace-nowrap rounded-md text-muted-foreground text-xs tabular-nums opacity-0 @max-[45rem]/pane:hidden group-hover/timeline-row:pointer-events-auto group-hover/timeline-row:static group-hover/timeline-row:opacity-100 group-focus-within/timeline-row:pointer-events-auto group-focus-within/timeline-row:static group-focus-within/timeline-row:opacity-100",
               className,
             )}
           />
@@ -2474,7 +2478,11 @@ function AssistantMessageMeta({
       />
       {!message.streaming && (
         <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+          <TooltipTrigger
+            render={
+              <p className="text-muted-foreground text-xs tabular-nums @max-[45rem]/pane:hidden" />
+            }
+          >
             {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
           </TooltipTrigger>
           <TooltipPopup>
@@ -4793,7 +4801,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : null;
   // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
-    "flex size-6 shrink-0 items-center justify-center",
+    "flex size-6 shrink-0 items-center justify-center @max-[45rem]/pane:size-5",
     showWarningIndicator
       ? "text-warning"
       : showDestructiveRowStyle
@@ -4857,11 +4865,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
+            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed @max-[45rem]/pane:text-xs">
               <span
                 className={cn(
                   answerPreview ? "shrink-0" : "min-w-0 flex-1",
                   expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  // A narrow workspace pane reads tool calls as terminal receipts.
+                  workLogEntryIsToolLike(workEntry) && "@max-[45rem]/pane:font-mono",
                   headingClass,
                 )}
                 onClick={expanded ? stopRowToggleWhileSelectingText : undefined}

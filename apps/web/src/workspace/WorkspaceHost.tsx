@@ -12,7 +12,9 @@ import {
 } from "react";
 
 import { SidebarInset } from "../components/ui/sidebar";
+import { cn } from "../lib/utils";
 import { usePanelAnimationSettings } from "../panelAnimations";
+import { shouldUseRightPanelSheetForRowWidth } from "../rightPanelLayout";
 import {
   buildDraftThreadRouteParams,
   buildThreadRouteParams,
@@ -24,6 +26,8 @@ import { PaneDividers } from "./PaneSplit";
 import { PaneView } from "./PaneView";
 import { type RouteSyncState, planRouteSync } from "./routeSync";
 import { useWorkspaceShortcuts } from "./useWorkspaceShortcuts";
+import { WorkspaceInspector } from "./WorkspaceInspector";
+import { WorkspaceInspectorProvider, type WorkspaceInspectorValue } from "./workspaceInspector";
 import { WORKSPACE_QUICK_RATIO, useWorkspaceMotion } from "./workspaceMotion";
 import { selectActiveWorkspace, selectFocusedTab, useWorkspaceStore } from "./workspaceStore";
 import {
@@ -98,6 +102,20 @@ function useNarrowContainer(containerRef: RefObject<HTMLElement | null>): boolea
   return narrow;
 }
 
+/** Inline inspector or sheet, decided by the workspace row's width rather than the viewport. */
+function useInspectorSheet(row: HTMLElement | null): boolean {
+  const [sheet, setSheet] = useState(false);
+  useLayoutEffect(() => {
+    if (!row) return;
+    const update = () => setSheet(shouldUseRightPanelSheetForRowWidth(row.clientWidth));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [row]);
+  return sheet;
+}
+
 interface DragPreview {
   readonly splitId: string;
   readonly ratio: number;
@@ -117,6 +135,19 @@ export function WorkspaceHost({ routeTarget }: { readonly routeTarget: ThreadRou
   );
   const narrow = useNarrowContainer(containerRef);
   const [drag, setDrag] = useState<DragPreview | null>(null);
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  const [inspectorSlot, setInspectorSlot] = useState<HTMLDivElement | null>(null);
+  const [inspectorMaximized, setInspectorMaximized] = useState(false);
+  const inspectorSheet = useInspectorSheet(row);
+  const inspector = useMemo<WorkspaceInspectorValue>(
+    () => ({
+      slot: inspectorSlot,
+      clampContainer: row,
+      sheet: inspectorSheet,
+      setMaximized: setInspectorMaximized,
+    }),
+    [inspectorSheet, inspectorSlot, row],
+  );
 
   const shownRoot = visibleLayout(workspace, narrow);
   const root = useMemo(
@@ -154,28 +185,39 @@ export function WorkspaceHost({ routeTarget }: { readonly routeTarget: ThreadRou
         <WorkspaceShortcuts containerRef={containerRef} />
       </PaneContextProvider>
       <WorkspaceRouteSync routeTarget={routeTarget} />
-      <div
-        ref={containerRef}
-        data-workspace-id={workspace.id}
-        className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-        style={style}
-      >
-        {panes.map((pane) => (
-          <PaneView
-            key={pane.id}
-            pane={pane}
-            rect={rects.get(pane.id)!}
-            chrome={chrome.get(pane.id)!}
-            multiPane={panes.length > 1}
-          />
-        ))}
-        <PaneDividers
-          root={root}
-          containerRef={containerRef}
-          onPreview={previewRatio}
-          onCommit={commitRatio}
-        />
-      </div>
+      <WorkspaceInspectorProvider value={inspector}>
+        <div ref={setRow} className="flex min-h-0 min-w-0 flex-1">
+          <div
+            ref={containerRef}
+            data-workspace-id={workspace.id}
+            className={cn(
+              "relative min-h-0 min-w-0 overflow-hidden",
+              // A maximized inspector takes the row. The collapsed tree reads as
+              // narrow, so only the focused pane, whose chat owns the inspector,
+              // stays mounted behind it.
+              inspectorMaximized ? "w-0 flex-none" : "flex-1",
+            )}
+            style={style}
+          >
+            {panes.map((pane) => (
+              <PaneView
+                key={pane.id}
+                pane={pane}
+                rect={rects.get(pane.id)!}
+                chrome={chrome.get(pane.id)!}
+                multiPane={panes.length > 1}
+              />
+            ))}
+            <PaneDividers
+              root={root}
+              containerRef={containerRef}
+              onPreview={previewRatio}
+              onCommit={commitRatio}
+            />
+          </div>
+          <WorkspaceInspector slotRef={setInspectorSlot} maximized={inspectorMaximized} />
+        </div>
+      </WorkspaceInspectorProvider>
     </SidebarInset>
   );
 }

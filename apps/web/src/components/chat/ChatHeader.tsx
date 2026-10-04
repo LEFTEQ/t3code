@@ -52,6 +52,7 @@ import { cn } from "~/lib/utils";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { usePaneContext } from "~/workspace/paneContext";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -160,6 +161,9 @@ export const ChatHeader = memo(function ChatHeader({
       breakpoint: { value: HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM, unit: "rem" },
     });
   }, [panelAnimationDurationMs, panelAnimationsActive]);
+  // In a workspace pane the tab strip carries the title and thread header; this header keeps
+  // only its actions (the hidden breadcrumb still holds their place on the right).
+  const inPane = usePaneContext().paneId !== null;
   const isMobile = useIsMobile();
   // Side panels can leave a desktop header narrower than a phone.
   const [isNarrowHeader, setIsNarrowHeader] = useState(false);
@@ -402,7 +406,7 @@ export const ChatHeader = memo(function ChatHeader({
     >
       <WorkspaceBreadcrumb
         ariaLabel="Thread breadcrumb"
-        className="flex-1 overflow-clip [overflow-clip-margin:2px]"
+        className={cn("flex-1 overflow-clip [overflow-clip-margin:2px]", inPane && "invisible")}
       >
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone

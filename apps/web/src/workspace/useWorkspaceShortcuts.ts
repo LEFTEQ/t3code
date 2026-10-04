@@ -9,8 +9,9 @@ import {
 import { type RefObject, useEffect, useEffectEvent } from "react";
 
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
+import { toastManager } from "../components/ui/toast";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { type useNewThreadHandler, useHandleNewThread } from "../hooks/useHandleNewThread";
 import {
   isWorkspaceCommand,
   resolveShortcutCommand,
@@ -20,7 +21,7 @@ import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
-import { readThreadShell } from "../state/entities";
+import { readProject, readThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { findTabLocation } from "./paneTree";
 import { selectActiveWorkspace, selectFocusedTab, useWorkspaceStore } from "./workspaceStore";
@@ -68,6 +69,8 @@ export interface WorkspaceCommandEnvironment {
   readonly containerSize: () => { width: number; height: number } | null;
   /** Opens a fresh draft for the focused tab's project, as a tab or in a new split. */
   readonly openNewTab: (split?: "right" | "down") => void;
+  /** Opens a new workspace seeded with a fresh draft for the focused tab's project. */
+  readonly openNewWorkspace: () => void;
   readonly emit: (command: WorkspaceUiCommand) => void;
 }
 
@@ -147,13 +150,13 @@ export function runWorkspaceCommand(
     case "tab.reorderRight":
       return store.reorderTab(1);
     case "workspace.new":
-      return store.createWorkspace();
+      return environment.openNewWorkspace();
     case "workspace.previous":
       return store.selectWorkspace("previous");
     case "workspace.next":
       return store.selectWorkspace("next");
     case "workspace.close":
-      return store.closeWorkspace(selectActiveWorkspace(store).id);
+      return closeWorkspaceWithUndo(selectActiveWorkspace(store).id);
     case "workspace.switcher":
       return openCommandPalette({ open: "workspaces" });
     case "tab.rename":
@@ -166,6 +169,57 @@ export function runWorkspaceCommand(
 
 function emitWorkspaceUiCommand(command: WorkspaceUiCommand): void {
   for (const listener of uiCommandListeners) listener(command);
+}
+
+/** Closes a workspace and offers Undo; its threads stay reachable from All threads either way. */
+export function closeWorkspaceWithUndo(id: string): void {
+  const { workspaces, closeWorkspace } = useWorkspaceStore.getState();
+  const index = workspaces.findIndex((workspace) => workspace.id === id);
+  const closed = workspaces[index];
+  if (!closed) return;
+  closeWorkspace(id);
+  const toastId = toastManager.add({
+    type: "success",
+    title: `Closed ${closed.name}`,
+    actionProps: {
+      children: "Undo",
+      onClick: () => {
+        toastManager.close(toastId);
+        useWorkspaceStore.getState().restoreWorkspace(closed, index);
+      },
+    },
+  });
+}
+
+/**
+ * ⌘N: a new workspace named after the focused tab's project, seeded with that
+ * project's fresh draft so the workspace never sits empty. A project keeps one
+ * empty draft, so a draft already open elsewhere moves into the new workspace.
+ * With no project to inherit it opens a blank "Workspace N".
+ */
+export async function openSeededWorkspace(input: {
+  readonly projectRef: ScopedProjectRef | null;
+  readonly projectName: string | undefined;
+  readonly handleNewThread: ReturnType<typeof useNewThreadHandler>;
+}): Promise<void> {
+  const { projectRef, projectName, handleNewThread } = input;
+  if (!projectRef) return useWorkspaceStore.getState().createWorkspace();
+  let presented = false;
+  const opened = await handleNewThread(projectRef, {
+    present: (target) => {
+      presented = true;
+      useWorkspaceStore.getState().createWorkspace({ name: projectName, seed: target });
+    },
+  });
+  if (presented) return;
+  // The draft was already the focused tab, so nothing was presented.
+  useWorkspaceStore
+    .getState()
+    .createWorkspace(
+      opened
+        ? { name: projectName, seed: { kind: "draft", draftId: opened.draftId } }
+        : { name: projectName },
+    );
 }
 
 let mountedEnvironment: WorkspaceCommandEnvironment | null = null;
@@ -252,6 +306,15 @@ export function useWorkspaceShortcuts(containerRef: RefObject<HTMLElement | null
     });
   });
 
+  const openNewWorkspace = useEffectEvent(() => {
+    const projectRef = focusedTabProjectRef() ?? newThreadContext.defaultProjectRef;
+    void openSeededWorkspace({
+      projectRef,
+      projectName: projectRef ? readProject(projectRef)?.title : undefined,
+      handleNewThread: newThreadContext.handleNewThread,
+    });
+  });
+
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || isCommandPaletteOpen()) return;
     if (event.target instanceof Element && event.target.closest("[data-keybinding-capture]")) {
@@ -275,7 +338,8 @@ export function useWorkspaceShortcuts(containerRef: RefObject<HTMLElement | null
         const rect = containerRef.current?.getBoundingClientRect();
         return rect ? { width: rect.width, height: rect.height } : null;
       },
-      openNewTab: () => openNewTab(),
+      openNewTab: (split) => openNewTab(split),
+      openNewWorkspace: () => openNewWorkspace(),
       emit: emitWorkspaceUiCommand,
     };
     setWorkspaceShortcutsActive(true);
