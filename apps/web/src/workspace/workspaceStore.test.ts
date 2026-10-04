@@ -22,6 +22,15 @@ const draft = (id: string): PaneTab => ({ kind: "draft", draftId: id as DraftId 
 const store = () => useWorkspaceStore.getState();
 const active = () => selectActiveWorkspace(store());
 const paneTabs = () => listPanes(active().root).map((pane) => pane.tabs);
+/** A draft session in this tab's own draft store, alone in its project. */
+const holdDraft = (id: string): DraftId => {
+  const draftId = DraftId.make(id);
+  const projectRef = scopeProjectRef("env-1" as EnvironmentId, ProjectId.make(id));
+  useComposerDraftStore
+    .getState()
+    .setProjectDraftThreadId(projectRef, draftId, { threadId: ThreadId.make(`${id}-thread`) });
+  return draftId;
+};
 
 beforeEach(() => {
   useWorkspaceStore.setState(sanitizePersistedWorkspaces(null));
@@ -65,18 +74,27 @@ describe("workspaceStore", () => {
   });
 
   it("closes a draft deleted in this tab from its unselected tab, never to reopen", () => {
-    const projectRef = scopeProjectRef("env-1" as EnvironmentId, ProjectId.make("project"));
-    const draftId = DraftId.make("draft-deleted-here");
-    const drafts = useComposerDraftStore.getState();
-    drafts.setProjectDraftThreadId(projectRef, draftId, { threadId: ThreadId.make("draft-t") });
+    const draftId = holdDraft("draft-deleted-here");
     store().openTarget(draft(draftId));
     store().openTarget(thread("A"));
     expect(paneTabs()).toEqual([[draft(draftId), thread("A")]]);
 
-    drafts.clearDraftThread(draftId);
+    useComposerDraftStore.getState().clearDraftThread(draftId);
 
     expect(paneTabs()).toEqual([[thread("A")]]);
     expect(active().closedTabs).toEqual([]);
+  });
+
+  it("never reopens a draft deleted after its tab was closed", () => {
+    const draftId = holdDraft("draft-closed-then-deleted");
+    store().openTarget(thread("A"));
+    store().openTarget(draft(draftId));
+    store().closeTab();
+
+    useComposerDraftStore.getState().clearDraftThread(draftId);
+    store().reopenClosedTab();
+
+    expect(paneTabs()).toEqual([[thread("A")]]);
   });
 
   it("moves focus between panes and ignores the outer edge", () => {

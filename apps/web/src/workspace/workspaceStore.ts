@@ -75,7 +75,7 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
   closeTab: (paneId?: PaneId, index?: number) => void;
   /** Closes a tab whose thread is gone (deleted, promoted away); never reopenable. */
   dismissTab: (paneId: PaneId, index: number) => void;
-  /** `dismissTab` for a gone target wherever it is open, in any workspace. */
+  /** `dismissTab` for a gone target in every workspace, and off every reopen list. */
   dismissEverywhere: (tab: PaneTab) => void;
   reopenClosedTab: () => void;
   closeOtherTabs: () => void;
@@ -516,8 +516,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
 
       dismissEverywhere: (tab) => {
         const { workspaces } = get();
-        const next = workspaces.map((workspace) => removeEverywhere(workspace, tab));
-        // Skips the save when the tab is not open anywhere.
+        const next = workspaces.map((workspace) => {
+          const open = removeEverywhere(workspace, tab);
+          const closedTabs = open.closedTabs.filter((closed) => !samePaneTab(closed, tab));
+          return closedTabs.length === open.closedTabs.length ? open : { ...open, closedTabs };
+        });
+        // Skips the save when no workspace holds the tab.
         if (next.some((workspace, index) => workspace !== workspaces[index])) {
           set({ workspaces: next });
         }
@@ -729,13 +733,14 @@ if (typeof window !== "undefined") {
   import.meta.hot?.dispose(() => window.removeEventListener("storage", onStorage));
 }
 
-// A draft this tab's own store drops (deleted, or promoted and finalized)
-// closes wherever it is open, even unselected or in another workspace, so the
-// close survives a reload and reaches other browser tabs through the layout
-// sync. Promotion swaps the draft's tab for its thread before finalizing it, so
-// a tab still holding a dropped draft has nothing left to become. Another
-// browser tab's drafts never pass through this store, so they are never closed
-// here.
+// The one place a draft's tab closes by itself (a pane's view never closes a
+// draft it cannot find, since another browser tab may hold it). A draft this
+// tab's own store drops (deleted, or promoted and finalized) closes wherever
+// it is open and leaves the reopen lists, so the close survives a reload and
+// reaches other browser tabs through the layout sync. Promotion swaps the
+// draft's tab for its thread before finalizing it, so a tab still holding a
+// dropped draft has nothing left to become. Another browser tab's drafts never
+// pass through this store, so they are never closed here.
 const stopDismissingDroppedDrafts = useComposerDraftStore.subscribe((state, previous) => {
   if (state.draftThreadsByThreadKey === previous.draftThreadsByThreadKey) return;
   for (const draftId of Object.keys(previous.draftThreadsByThreadKey)) {

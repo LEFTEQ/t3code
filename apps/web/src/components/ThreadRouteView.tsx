@@ -68,18 +68,13 @@ export function ThreadRouteView({
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
   );
-  // A pane only closes a draft this browser tab held and lost: panes are shared
-  // by every tab on the origin, so a draft it never held may be another tab's,
-  // still live there. The router's URL is this tab's own, so there any missing
-  // draft leaves.
-  const goneDraftId = useComposerDraftStore((store) =>
-    draftId !== null &&
-    (pane.paneId === null
-      ? store.getDraftSession(draftId) === null
-      : store.isDraftSessionDiscarded(draftId))
-      ? draftId
-      : null,
-  );
+  // A pane never closes a draft missing from this store: panes are shared by
+  // every browser tab on the origin, and the draft may live in another tab, even
+  // one this tab discarded and that tab reused. This tab's own discards close
+  // their tabs centrally (see workspaceStore). The router's URL is this tab's
+  // own, so there a missing draft leaves.
+  const goneDraftId =
+    pane.paneId === null && draftId !== null && draftSession === null ? draftId : null;
   const threadRefs = useThreadRefs();
   // The server thread this view is about: the route's own ref, or the draft's
   // reserved ref once the server knows it.
@@ -258,8 +253,8 @@ export function ThreadRouteView({
 }
 
 /**
- * A pane's draft this browser tab never held. It stays open, and turns into
- * the chat if this tab's store learns the draft.
+ * A pane's draft missing from this browser tab's store. It stays open, and
+ * turns into the chat if this tab's store learns the draft.
  */
 function DraftNotHere() {
   return (
