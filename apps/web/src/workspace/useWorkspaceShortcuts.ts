@@ -23,7 +23,6 @@ import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { readProject, readThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { findTabLocation } from "./paneTree";
 import { selectActiveWorkspace, selectFocusedTab, useWorkspaceStore } from "./workspaceStore";
 
 /** Workspace commands the store cannot run on its own; their UI owner subscribes. */
@@ -293,17 +292,22 @@ export function useWorkspaceShortcuts(containerRef: RefObject<HTMLElement | null
     }
     // The presenter is the only placement: a reused draft already open
     // somewhere is focused there instead of opening twice. A project keeps
-    // one empty draft, so a split whose draft is already on screen opens empty.
-    void newThreadContext.handleNewThread(projectRef, {
-      present: (target) => {
-        const store = useWorkspaceStore.getState();
-        if (!split) return store.openTarget(target);
-        const shown = store.workspaces.some(
-          (workspace) => findTabLocation(workspace.root, target) !== null,
-        );
-        store.splitFocused(split, shown ? undefined : target);
-      },
-    });
+    // one empty draft, so a split carries that draft into the new pane. When
+    // the draft is already the focused tab nothing is presented, and the
+    // split opens empty beside it.
+    let presented = false;
+    void newThreadContext
+      .handleNewThread(projectRef, {
+        present: (target) => {
+          presented = true;
+          const store = useWorkspaceStore.getState();
+          if (split) store.splitFocusedMoving(split, target);
+          else store.openTarget(target);
+        },
+      })
+      .then((opened) => {
+        if (split && opened && !presented) useWorkspaceStore.getState().splitFocused(split);
+      });
   });
 
   const openNewWorkspace = useEffectEvent(() => {

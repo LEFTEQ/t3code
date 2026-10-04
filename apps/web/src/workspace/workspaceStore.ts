@@ -62,6 +62,13 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
   replaceTab: (paneId: PaneId, from: PaneTab, to: PaneTab) => void;
   newTab: (target: PaneTab) => void;
   splitFocused: (direction: "right" | "down", tab?: PaneTab) => void;
+  /**
+   * Splits the focused pane and moves `tab` there from wherever it sits in the
+   * active workspace, like cmux carrying a surface into a new split. The
+   * focused tab itself, or a tab only another workspace holds, stays put and
+   * the split opens empty.
+   */
+  splitFocusedMoving: (direction: "right" | "down", tab: PaneTab) => void;
   focusPane: (paneId: PaneId) => void;
   focusDirection: (direction: FocusDirection) => void;
   selectTab: (which: TabChoice) => void;
@@ -387,6 +394,29 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           const existing = tab ? focusExisting(state, tab) : null;
           if (existing) return existing;
           return updateActive(state, (workspace) => splitWorkspace(workspace, direction, tab));
+        }),
+
+      splitFocusedMoving: (direction, tab) =>
+        set((state) => {
+          const heldElsewhere = state.workspaces.some(
+            (workspace) =>
+              workspace.id !== selectActiveWorkspace(state).id &&
+              findTabLocation(workspace.root, tab) !== null,
+          );
+          return updateActive(state, (workspace) => {
+            const location = findTabLocation(workspace.root, tab);
+            if (!location) {
+              return splitWorkspace(workspace, direction, heldElsewhere ? undefined : tab);
+            }
+            const focused = findPane(workspace.root, workspace.focusedPaneId);
+            if (location.paneId === focused?.id && location.index === focused.selectedIndex) {
+              return splitWorkspace(workspace, direction);
+            }
+            // Removing it can only collapse another pane: the focused one still
+            // holds its selected tab.
+            const { root } = removeTab(workspace.root, location.paneId, location.index);
+            return splitWorkspace(withRoot(workspace, root), direction, tab);
+          });
         }),
 
       focusPane: (paneId) =>

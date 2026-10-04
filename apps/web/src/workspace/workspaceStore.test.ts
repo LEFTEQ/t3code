@@ -53,6 +53,16 @@ describe("workspaceStore", () => {
     expect(selectFocusedTab(store())).toEqual(thread("B"));
   });
 
+  it("carries an open draft into a new split, but never the focused tab", () => {
+    store().openTarget(draft("D"));
+    store().openTarget(thread("A"));
+    store().splitFocusedMoving("right", draft("D"));
+    expect(paneTabs()).toEqual([[thread("A")], [draft("D")]]);
+    expect(selectFocusedTab(store())).toEqual(draft("D"));
+    store().splitFocusedMoving("down", draft("D"));
+    expect(paneTabs()).toEqual([[thread("A")], [draft("D")], []]);
+  });
+
   it("moves focus between panes and ignores the outer edge", () => {
     store().openTarget(thread("A"));
     store().splitFocused("down", thread("B"));

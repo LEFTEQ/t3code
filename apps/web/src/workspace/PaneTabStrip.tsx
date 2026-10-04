@@ -52,6 +52,7 @@ import type { SidebarThreadSummary } from "../types";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 import { type TabAttention, useTabAttention } from "./attention";
 import { type PaneLeaf, type PaneTab, paneTabKey } from "./paneTree";
+import { scrollLeftToReveal } from "./tabScroll";
 import {
   type WorkspaceUiCommand,
   dispatchWorkspaceCommand,
@@ -335,10 +336,11 @@ function placePill(list: HTMLElement, pill: HTMLElement, durationMs: number) {
   pill.style.transform = `translateX(${tab.offsetLeft}px)`;
   pill.style.width = `${tab.offsetWidth}px`;
   pill.style.opacity = "1";
-  if (tab.offsetLeft < list.scrollLeft) list.scrollLeft = tab.offsetLeft;
-  else if (tab.offsetLeft + tab.offsetWidth > list.scrollLeft + list.clientWidth) {
-    list.scrollLeft = tab.offsetLeft + tab.offsetWidth - list.clientWidth;
-  }
+  const scrollLeft = scrollLeftToReveal(
+    { start: tab.offsetLeft, width: tab.offsetWidth },
+    { scrollLeft: list.scrollLeft, width: list.clientWidth },
+  );
+  if (scrollLeft !== list.scrollLeft) list.scrollLeft = scrollLeft;
 }
 
 /**
