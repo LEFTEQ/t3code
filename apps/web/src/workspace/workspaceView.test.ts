@@ -101,4 +101,22 @@ describe("createPaneContextValue", () => {
     void left.openTarget(thread("C"));
     expect(tabsByPane()).toEqual([[thread("A"), thread("C")], [thread("B")]]);
   });
+
+  it("still reaches its own pane after a workspace switch", () => {
+    store().openTarget(thread("A"));
+    const home = active().id;
+    const pane = createPaneContextValue(focusedPaneId(), true);
+    store().createWorkspace();
+
+    void pane.openTarget(thread("B"));
+    expect(active().id).toBe(home);
+    expect(tabsByPane()).toEqual([[thread("A"), thread("B")]]);
+
+    store().selectWorkspace("next");
+    void pane.dismissTarget(thread("A"));
+    expect(active().id).not.toBe(home);
+    expect(listPanes(store().workspaces[0]!.root).map((leaf) => leaf.tabs)).toEqual([
+      [thread("B")],
+    ]);
+  });
 });

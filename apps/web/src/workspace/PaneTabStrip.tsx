@@ -54,7 +54,8 @@ import { useAtomCommand } from "../state/use-atom-command";
 import type { SidebarThreadSummary } from "../types";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 import { type TabAttention, useTabAttention } from "./attention";
-import { type PaneLeaf, type PaneTab, paneTabKey } from "./paneTree";
+import { markDirectPaneFocus } from "./paneContext";
+import { type PaneId, type PaneLeaf, type PaneTab, paneTabKey } from "./paneTree";
 import { scrollLeftToReveal } from "./tabScroll";
 import {
   type WorkspaceUiCommand,
@@ -62,7 +63,7 @@ import {
   onWorkspaceUiCommand,
 } from "./useWorkspaceShortcuts";
 import { useWorkspaceStore } from "./workspaceStore";
-import type { PaneChrome } from "./workspaceView";
+import { type PaneChrome, paneTabPanelIds } from "./workspaceView";
 
 const STATUS_LABEL: Record<TabAttention["status"], string | null> = {
   approval: "needs approval",
@@ -132,7 +133,15 @@ function useModelChip(shell: SidebarThreadSummary) {
 }
 
 /** The thread header the selected tab carries: branch, linked PR and model. */
-function SelectedTabChips({ shell }: { readonly shell: SidebarThreadSummary }) {
+function SelectedTabChips({
+  shell,
+  threadRef,
+  paneId,
+}: {
+  readonly shell: SidebarThreadSummary;
+  readonly threadRef: ScopedThreadRef;
+  readonly paneId: PaneId;
+}) {
   const linked = useLinkedThreadPullRequest(
     shell.environmentId,
     shell.linkedPullRequest,
@@ -141,7 +150,7 @@ function SelectedTabChips({ shell }: { readonly shell: SidebarThreadSummary }) {
     shell.branchPullRequest,
   );
   const pr = prStatusIndicator(linked?.pr ?? null, linked?.sourceControlProvider);
-  const openPrLink = useOpenPrLink();
+  const openPrLink = useOpenPrLink(threadRef);
   const model = useModelChip(shell);
   return (
     <span className="flex shrink-0 items-center gap-1">
@@ -160,7 +169,12 @@ function SelectedTabChips({ shell }: { readonly shell: SidebarThreadSummary }) {
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-sm outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={(event) => openPrLink(event, pr.url)}
+                onClick={(event) => {
+                  // The shared inspector follows the focused pane: focus this
+                  // one so the PR opens beside its thread.
+                  useWorkspaceStore.getState().focusPane(paneId);
+                  openPrLink(event, pr.url, threadRef);
+                }}
               />
             }
           >
@@ -210,6 +224,22 @@ function TabRenameInput({
   );
 }
 
+/** The tab an arrow, Home or End key moves focus to, wrapping at the ends. */
+function tabForKey(tabs: readonly HTMLElement[], from: number, key: string) {
+  switch (key) {
+    case "ArrowLeft":
+      return tabs.at(from - 1);
+    case "ArrowRight":
+      return tabs[(from + 1) % tabs.length];
+    case "Home":
+      return tabs[0];
+    case "End":
+      return tabs.at(-1);
+    default:
+      return undefined;
+  }
+}
+
 const PaneTabItem = memo(function PaneTabItem({
   tab,
   index,
@@ -241,6 +271,32 @@ const PaneTabItem = memo(function PaneTabItem({
     store.selectTab(index);
   };
   const close = () => useWorkspaceStore.getState().closeTab(paneId, index);
+  // The ARIA tabs pattern: the selected tab is the strip's one tab stop;
+  // arrows (wrapping), Home and End move focus, Enter or Space selects (the
+  // button's click), Delete or Backspace closes the focused tab.
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    const list = event.currentTarget.closest('[role="tablist"]');
+    if (!list) return;
+    const tabs = () => [...list.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const position = tabs().indexOf(event.currentTarget);
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      // Focus stays in the strip, on the tab taking this one's place, rather
+      // than following a newly shown thread into its composer.
+      if (selected) markDirectPaneFocus(paneId);
+      close();
+      requestAnimationFrame(() => {
+        const remaining = tabs();
+        remaining[Math.min(position, remaining.length - 1)]?.focus();
+      });
+      return;
+    }
+    const next = tabForKey(tabs(), position, event.key);
+    if (!next) return;
+    event.preventDefault();
+    next.focus();
+  };
   return (
     <div
       data-tab-key={paneTabKey(tab)}
@@ -282,13 +338,17 @@ const PaneTabItem = memo(function PaneTabItem({
         <button
           type="button"
           role="tab"
+          id={selected ? paneTabPanelIds(paneId).tab : undefined}
           aria-selected={selected}
+          aria-controls={selected ? paneTabPanelIds(paneId).panel : undefined}
           aria-label={statusLabel ? `${title}, ${statusLabel}` : title}
+          tabIndex={selected ? 0 : -1}
           className={cn(
             "min-w-0 cursor-pointer truncate text-left outline-none focus-visible:underline",
             selected && "max-w-40 font-semibold",
           )}
           onClick={select}
+          onKeyDown={onKeyDown}
           onDoubleClick={() => {
             if (tab.kind === "server") onStartRename(tab);
           }}
@@ -296,8 +356,11 @@ const PaneTabItem = memo(function PaneTabItem({
           {title}
         </button>
       )}
-      {selected && shell ? <SelectedTabChips shell={shell} /> : null}
-      <PanelTabCloseButton label={`Close ${title}`} onClick={close}>
+      {selected && shell && tab.kind === "server" ? (
+        <SelectedTabChips shell={shell} threadRef={tab.threadRef} paneId={paneId} />
+      ) : null}
+      {/* Out of the tab order: Delete on the focused tab or ⌘W closes it. */}
+      <PanelTabCloseButton label={`Close ${title}`} onClick={close} tabIndex={-1}>
         {attention?.unread && !selected ? (
           <span aria-hidden className="size-1.5 rounded-full bg-primary" />
         ) : null}

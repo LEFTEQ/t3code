@@ -41,6 +41,11 @@ export function hasWorkspaceLayout(workspace: Workspace): boolean {
   return workspace.root.kind === "split" || workspace.root.tabs.length > 0;
 }
 
+/** DOM ids tying a pane's selected tab (the strip) to its content (the tab panel). */
+export function paneTabPanelIds(paneId: PaneId) {
+  return { tab: `pane-tab-${paneId}`, panel: `pane-panel-${paneId}` };
+}
+
 export interface PaneChrome {
   /** Touches the window's top edge: its tab strip is part of the title bar. */
   readonly top: boolean;

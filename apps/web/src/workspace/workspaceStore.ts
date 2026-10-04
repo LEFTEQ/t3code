@@ -16,6 +16,7 @@ import { randomUUID } from "../lib/utils";
 import {
   addTab,
   adjacentPaneInOrder,
+  collapsePane,
   createPaneLeaf,
   equalize,
   findPane,
@@ -69,9 +70,11 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
    * the split opens empty.
    */
   splitFocusedMoving: (direction: "right" | "down", tab: PaneTab) => void;
+  /** Focuses a pane in whichever workspace holds it, making that workspace active. */
   focusPane: (paneId: PaneId) => void;
   focusDirection: (direction: FocusDirection) => void;
   selectTab: (which: TabChoice) => void;
+  /** Closes a tab (by default the focused one), or an empty pane unless it is the last. */
   closeTab: (paneId?: PaneId, index?: number) => void;
   /** Closes a tab whose thread is gone (deleted, promoted away); never reopenable. */
   dismissTab: (paneId: PaneId, index: number) => void;
@@ -193,16 +196,42 @@ function updateActive(
   return next === workspace ? {} : replaceWorkspace(state, next);
 }
 
-/** Removes a tab from the active workspace; only user closes are remembered for reopen. */
+/**
+ * `updateActive` for the workspace holding `paneId` (the active one when no
+ * pane is named): a pane context can outlive a workspace switch.
+ */
+function updateHolding(
+  state: WorkspaceLayoutState,
+  paneId: PaneId | undefined,
+  update: (workspace: Workspace) => Workspace,
+): Partial<WorkspaceLayoutState> {
+  if (paneId === undefined) return updateActive(state, update);
+  const workspace = state.workspaces.find((candidate) => findPane(candidate.root, paneId));
+  if (!workspace) return {};
+  const next = update(workspace);
+  return next === workspace ? {} : replaceWorkspace(state, next);
+}
+
+/**
+ * Removes a tab; only user closes are remembered for reopen. A pane with no
+ * tabs collapses into its sibling instead, unless it is the last pane.
+ */
 function closeTabIn(
   state: WorkspaceLayoutState,
   paneId: PaneId | undefined,
   index: number | undefined,
   remember: boolean,
 ): Partial<WorkspaceLayoutState> {
-  return updateActive(state, (workspace) => {
+  return updateHolding(state, paneId, (workspace) => {
     const pane = findPane(workspace.root, paneId ?? workspace.focusedPaneId);
     if (!pane) return workspace;
+    if (pane.tabs.length === 0) {
+      const collapsed = collapsePane(workspace.root, pane.id);
+      if (!collapsed) return workspace;
+      const focusedPaneId =
+        workspace.focusedPaneId === pane.id ? collapsed.nearestPaneId : workspace.focusedPaneId;
+      return withRoot(workspace, collapsed.root, focusedPaneId);
+    }
     const { root, removed, collapsedInto } = removeTab(
       workspace.root,
       pane.id,
@@ -489,7 +518,14 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
         }),
 
       focusPane: (paneId) =>
-        set((state) => updateActive(state, (workspace) => withFocus(workspace, paneId))),
+        set((state) => {
+          const workspace = state.workspaces.find((candidate) => findPane(candidate.root, paneId));
+          if (!workspace) return {};
+          return {
+            ...replaceWorkspace(state, withFocus(workspace, paneId)),
+            activeWorkspaceId: workspace.id,
+          };
+        }),
 
       focusDirection: (direction) =>
         set((state) =>

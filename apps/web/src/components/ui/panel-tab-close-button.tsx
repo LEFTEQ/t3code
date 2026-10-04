@@ -6,6 +6,8 @@ interface PanelTabCloseButtonProps {
   children: ReactNode;
   label: string;
   onClick: () => void;
+  /** -1 keeps it out of the tab order where the tab itself closes by keyboard. */
+  tabIndex?: number;
   tooltip?: string;
 }
 
@@ -14,6 +16,7 @@ export function PanelTabCloseButton({
   children,
   label,
   onClick,
+  tabIndex,
   tooltip,
 }: PanelTabCloseButtonProps) {
   const button = (
@@ -21,6 +24,7 @@ export function PanelTabCloseButton({
       type="button"
       className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
       aria-label={label}
+      tabIndex={tabIndex}
       onClick={onClick}
     >
       <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">

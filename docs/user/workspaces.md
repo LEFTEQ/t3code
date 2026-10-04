@@ -26,6 +26,8 @@ workspace shortcut.
 - A project keeps one empty draft. Starting a new thread for a project whose
   empty draft is already open focuses that draft; a new workspace takes it with
   it.
+- An empty pane closes with `Cmd+W` or its **Close pane** button. The last pane
+  stays open.
 - When the window is too narrow for the layout, only the focused pane shows.
   Widen the window to get the panes back.
 - Workspaces are saved on this device, per browser profile on the web. They do

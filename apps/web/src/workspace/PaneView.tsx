@@ -15,17 +15,25 @@ import { cn } from "../lib/utils";
 import { type PaneAttentionEdge, usePaneAttentionEdge } from "./attention";
 import { AttentionList } from "./AttentionList";
 import { PaneContextProvider, markDirectPaneFocus } from "./paneContext";
-import { type PaneLeaf, type PaneRect, selectedTab } from "./paneTree";
+import { type PaneId, type PaneLeaf, type PaneRect, selectedTab } from "./paneTree";
 import { PaneTabStrip } from "./PaneTabStrip";
 import { dispatchWorkspaceCommand } from "./useWorkspaceShortcuts";
 import { selectActiveWorkspace, useWorkspaceStore } from "./workspaceStore";
-import { type PaneChrome, createPaneContextValue } from "./workspaceView";
+import { type PaneChrome, createPaneContextValue, paneTabPanelIds } from "./workspaceView";
 
 function percent(value: number): string {
   return `${value * 100}%`;
 }
 
-function EmptyPane({ isFocused }: { readonly isFocused: boolean }) {
+function EmptyPane({
+  paneId,
+  isFocused,
+}: {
+  readonly paneId: PaneId;
+  readonly isFocused: boolean;
+}) {
+  // The last pane stays and shows this state; any other empty pane can close.
+  const closable = useWorkspaceStore((state) => selectActiveWorkspace(state).root.kind === "split");
   // Focus moving here by keyboard must leave the previous pane's composer, or
   // typing would still land in a chat that is no longer focused.
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -40,10 +48,19 @@ function EmptyPane({ isFocused }: { readonly isFocused: boolean }) {
       <EmptyHeader>
         <EmptyTitle>Empty pane</EmptyTitle>
         <EmptyDescription>Start a thread here, or open one from the sidebar.</EmptyDescription>
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex justify-center gap-2">
           <Button ref={buttonRef} size="sm" onClick={() => dispatchWorkspaceCommand("tab.new")}>
             New thread
           </Button>
+          {closable ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => useWorkspaceStore.getState().closeTab(paneId)}
+            >
+              Close pane
+            </Button>
+          ) : null}
         </div>
       </EmptyHeader>
     </Empty>
@@ -114,6 +131,9 @@ const PaneBody = memo(function PaneBody({
       {isFocused ? <AttentionList /> : null}
       <div
         data-pane-content
+        id={paneTabPanelIds(pane.id).panel}
+        role={tab ? "tabpanel" : undefined}
+        aria-labelledby={tab ? paneTabPanelIds(pane.id).tab : undefined}
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
         style={PANE_CONTENT_STYLE}
       >
@@ -127,7 +147,7 @@ const PaneBody = memo(function PaneBody({
               titleBarDragRegion={false}
             />
           ) : (
-            <EmptyPane isFocused={isFocused} />
+            <EmptyPane paneId={pane.id} isFocused={isFocused} />
           )}
         </PaneContextProvider>
       </div>
@@ -156,7 +176,13 @@ export const PaneView = memo(function PaneView({
   );
   const focusPane = (event: SyntheticEvent) => {
     if (isFocused) return;
-    if (event.target instanceof Element && event.target.closest("[data-pane-content]")) {
+    // A press inside the chat, or keyboard focus on a tab (so the tab list's
+    // arrow keys work), keeps DOM focus instead of jumping to the composer.
+    if (
+      event.target instanceof Element &&
+      (event.target.closest("[data-pane-content]") ||
+        event.target.matches('[role="tab"]:focus-visible'))
+    ) {
       markDirectPaneFocus(pane.id);
     }
     useWorkspaceStore.getState().focusPane(pane.id);

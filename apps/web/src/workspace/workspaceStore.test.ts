@@ -118,6 +118,20 @@ describe("workspaceStore", () => {
     expect(active().closedTabs).toEqual([]);
   });
 
+  it("closes an empty split pane into its sibling, but keeps the last pane", () => {
+    store().openTarget(thread("A"));
+    store().splitFocused("right");
+    store().closeTab();
+    expect(paneTabs()).toEqual([[thread("A")]]);
+    expect(selectFocusedTab(store())).toEqual(thread("A"));
+    expect(active().closedTabs).toEqual([]);
+
+    store().closeTab();
+    store().closeTab();
+    expect(paneTabs()).toEqual([[]]);
+    expect(active().closedTabs).toEqual([thread("A")]);
+  });
+
   it("dismisses a gone thread without making it reopenable", () => {
     store().newTab(thread("A"));
     store().newTab(thread("B"));
