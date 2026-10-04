@@ -1290,6 +1290,21 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("discards only drafts it held, never another browser tab's draft it has not seen", () => {
+    const store = useComposerDraftStore.getState();
+    const heldDraftId = DraftId.make("draft-held-then-deleted");
+    const otherTabDraftId = DraftId.make("draft-from-another-browser-tab");
+    store.setProjectDraftThreadId(projectRef, heldDraftId, { threadId });
+    expect(store.isDraftSessionDiscarded(heldDraftId)).toBe(false);
+
+    store.clearDraftThread(heldDraftId);
+
+    expect(store.getDraftSession(heldDraftId)).toBeNull();
+    expect(store.isDraftSessionDiscarded(heldDraftId)).toBe(true);
+    expect(store.getDraftSession(otherTabDraftId)).toBeNull();
+    expect(store.isDraftSessionDiscarded(otherTabDraftId)).toBe(false);
+  });
+
   it("removes a draft's previous project mapping when retargeted in place", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

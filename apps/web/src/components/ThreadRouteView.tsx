@@ -5,6 +5,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import {
   finalizePromotedDraftThreadByRef,
@@ -66,6 +67,18 @@ export function ThreadRouteView({
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
+  );
+  // A pane only closes a draft this browser tab held and lost: panes are shared
+  // by every tab on the origin, so a draft it never held may be another tab's,
+  // still live there. The router's URL is this tab's own, so there any missing
+  // draft leaves.
+  const goneDraftId = useComposerDraftStore((store) =>
+    draftId !== null &&
+    (pane.paneId === null
+      ? store.getDraftSession(draftId) === null
+      : store.isDraftSessionDiscarded(draftId))
+      ? draftId
+      : null,
   );
   const threadRefs = useThreadRefs();
   // The server thread this view is about: the route's own ref, or the draft's
@@ -173,11 +186,11 @@ export function ThreadRouteView({
   }, [canonicalThreadRef]);
 
   useEffect(() => {
-    if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
+    if (goneDraftId === null || canonicalThreadRef) {
       return;
     }
     dismissDraftTarget();
-  }, [canonicalThreadRef, draftSession, target.kind]);
+  }, [canonicalThreadRef, goneDraftId]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -216,6 +229,8 @@ export function ThreadRouteView({
           {...chatViewFrameProps}
         />
       );
+    } else if (goneDraftId === null) {
+      view = <DraftNotHere />;
     }
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
@@ -239,5 +254,22 @@ export function ThreadRouteView({
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
       {view}
     </SidebarInset>
+  );
+}
+
+/**
+ * A pane's draft this browser tab never held. It stays open, and turns into
+ * the chat if this tab's store learns the draft.
+ */
+function DraftNotHere() {
+  return (
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyTitle>Draft not available here</EmptyTitle>
+        <EmptyDescription>
+          It is open in another browser tab or window, or no longer exists.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }

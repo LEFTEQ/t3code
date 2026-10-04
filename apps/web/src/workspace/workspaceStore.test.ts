@@ -1,8 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { type EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import type { DraftId } from "../composerDraftStore";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { listPanes, type PaneTab } from "./paneTree";
 import {
   sanitizePersistedWorkspaces,
@@ -62,6 +62,21 @@ describe("workspaceStore", () => {
     expect(selectFocusedTab(store())).toEqual(draft("D"));
     store().splitFocusedMoving("down", draft("D"));
     expect(paneTabs()).toEqual([[thread("A")], [draft("D")], []]);
+  });
+
+  it("closes a draft deleted in this tab from its unselected tab, never to reopen", () => {
+    const projectRef = scopeProjectRef("env-1" as EnvironmentId, ProjectId.make("project"));
+    const draftId = DraftId.make("draft-deleted-here");
+    const drafts = useComposerDraftStore.getState();
+    drafts.setProjectDraftThreadId(projectRef, draftId, { threadId: ThreadId.make("draft-t") });
+    store().openTarget(draft(draftId));
+    store().openTarget(thread("A"));
+    expect(paneTabs()).toEqual([[draft(draftId), thread("A")]]);
+
+    drafts.clearDraftThread(draftId);
+
+    expect(paneTabs()).toEqual([[thread("A")]]);
+    expect(active().closedTabs).toEqual([]);
   });
 
   it("moves focus between panes and ignores the outer edge", () => {

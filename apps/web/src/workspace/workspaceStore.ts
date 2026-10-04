@@ -10,7 +10,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { DraftId } from "../composerDraftStore";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { resolveStorage } from "../lib/storage";
 import { randomUUID } from "../lib/utils";
 import {
@@ -75,6 +75,8 @@ interface WorkspaceStoreState extends WorkspaceLayoutState {
   closeTab: (paneId?: PaneId, index?: number) => void;
   /** Closes a tab whose thread is gone (deleted, promoted away); never reopenable. */
   dismissTab: (paneId: PaneId, index: number) => void;
+  /** `dismissTab` for a gone target wherever it is open, in any workspace. */
+  dismissEverywhere: (tab: PaneTab) => void;
   reopenClosedTab: () => void;
   closeOtherTabs: () => void;
   moveTab: (direction: FocusDirection | "previousPane" | "nextPane") => void;
@@ -423,7 +425,7 @@ export function syncWorkspacesFromStorage(event: Pick<StorageEvent, "key" | "new
 
 export const useWorkspaceStore = create<WorkspaceStoreState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...freshLayout(),
 
       openTarget: (target, opts) =>
@@ -511,6 +513,15 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       closeTab: (paneId, index) => set((state) => closeTabIn(state, paneId, index, true)),
 
       dismissTab: (paneId, index) => set((state) => closeTabIn(state, paneId, index, false)),
+
+      dismissEverywhere: (tab) => {
+        const { workspaces } = get();
+        const next = workspaces.map((workspace) => removeEverywhere(workspace, tab));
+        // Skips the save when the tab is not open anywhere.
+        if (next.some((workspace, index) => workspace !== workspaces[index])) {
+          set({ workspaces: next });
+        }
+      },
 
       reopenClosedTab: () =>
         set((state) => {
@@ -717,3 +728,22 @@ if (typeof window !== "undefined") {
   window.addEventListener("storage", onStorage);
   import.meta.hot?.dispose(() => window.removeEventListener("storage", onStorage));
 }
+
+// A draft this tab's own store drops (deleted, or promoted and finalized)
+// closes wherever it is open, even unselected or in another workspace, so the
+// close survives a reload and reaches other browser tabs through the layout
+// sync. Promotion swaps the draft's tab for its thread before finalizing it, so
+// a tab still holding a dropped draft has nothing left to become. Another
+// browser tab's drafts never pass through this store, so they are never closed
+// here.
+const stopDismissingDroppedDrafts = useComposerDraftStore.subscribe((state, previous) => {
+  if (state.draftThreadsByThreadKey === previous.draftThreadsByThreadKey) return;
+  for (const draftId of Object.keys(previous.draftThreadsByThreadKey)) {
+    if (state.draftThreadsByThreadKey[draftId] === undefined) {
+      useWorkspaceStore
+        .getState()
+        .dismissEverywhere({ kind: "draft", draftId: DraftId.make(draftId) });
+    }
+  }
+});
+import.meta.hot?.dispose(stopDismissingDroppedDrafts);

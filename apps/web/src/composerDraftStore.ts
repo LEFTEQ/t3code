@@ -496,6 +496,13 @@ interface ComposerDraftStoreState {
   getDraftSessionByProjectRef: (projectRef: ScopedProjectRef) => ProjectDraftSession | null;
   /** Reads mutable draft-session metadata by `DraftId`. */
   getDraftSession: (draftId: DraftId) => DraftSessionState | null;
+  /**
+   * A draft this browser tab held whose session is gone: deleted, or promoted
+   * and finalized. A draft id it never held is not discarded: workspace panes
+   * are shared by every browser tab on the origin, so a pane can carry another
+   * tab's live draft that this store has never seen.
+   */
+  isDraftSessionDiscarded: (draftId: DraftId) => boolean;
   /** Resolves a server-thread ref back to a matching draft session when one exists. */
   getDraftSessionByRef: (threadRef: ScopedThreadRef) => DraftSessionState | null;
   /** The draft id that reserved a server-thread ref, while its draft record still exists. */
@@ -2505,6 +2512,10 @@ function toHydratedDraftThreadState(
   };
 }
 
+// Every draft id this browser tab's store has held, recorded on hydration and
+// on each session change below; never pruned (see `isDraftSessionDiscarded`).
+const heldDraftIds = new Set<string>();
+
 const composerDraftStore = create<ComposerDraftStoreState>()(
   persist(
     (setBase, get) => {
@@ -2574,6 +2585,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           return null;
         },
         getDraftSession: (draftId) => get().draftThreadsByThreadKey[draftId] ?? null,
+        isDraftSessionDiscarded: (draftId) =>
+          heldDraftIds.has(draftId) && get().draftThreadsByThreadKey[draftId] === undefined,
         getDraftSessionByRef: (threadRef) => {
           for (const draftSession of Object.values(get().draftThreadsByThreadKey)) {
             if (
@@ -4082,6 +4095,17 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
     },
   ),
 );
+
+// Storage is synchronous, so hydration has already landed in getState().
+const rememberHeldDraftIds = (sessions: Record<string, DraftThreadState>) => {
+  for (const draftId of Object.keys(sessions)) heldDraftIds.add(draftId);
+};
+rememberHeldDraftIds(composerDraftStore.getState().draftThreadsByThreadKey);
+composerDraftStore.subscribe((state, previous) => {
+  if (state.draftThreadsByThreadKey !== previous.draftThreadsByThreadKey) {
+    rememberHeldDraftIds(state.draftThreadsByThreadKey);
+  }
+});
 
 export const useComposerDraftStore = composerDraftStore;
 
