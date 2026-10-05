@@ -75,7 +75,6 @@ import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection
 import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { importPastedComposerText } from "./composerInlineTokenPaste";
-import { didComposerSelectionChangeVisibly } from "./composerSelection";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 
 export interface ComposerPromptEditorHandle {
@@ -131,7 +130,6 @@ export interface ComposerPromptEditorProps {
     cursorAdjacentToMention: boolean,
     contextIds: string[],
   ) => void;
-  onVisibleSelectionChange?: () => void;
   onCommandKeyDown?: (
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab" | "Escape",
     event: KeyboardEvent,
@@ -596,7 +594,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     className,
     placeholderClassName,
     onChange,
-    onVisibleSelectionChange,
     onCommandKeyDown,
     onPageScrollKeyDown,
     onPageScrollKeyUp,
@@ -610,7 +607,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const richText = richTextEnabled ?? false;
 
   const onChangeRef = useRef(onChange);
-  const onVisibleSelectionChangeRef = useRef(onVisibleSelectionChange);
   const onCommandKeyDownRef = useRef(onCommandKeyDown);
   const buildFragmentRef = useRef(buildContextClipboardFragment);
   const importFragmentRef = useRef(importContextFragment);
@@ -623,9 +619,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
-  useEffect(() => {
-    onVisibleSelectionChangeRef.current = onVisibleSelectionChange;
-  }, [onVisibleSelectionChange]);
   useEffect(() => {
     onCommandKeyDownRef.current = onCommandKeyDown;
   }, [onCommandKeyDown]);
@@ -702,7 +695,6 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       start: Math.min(nextExpandedCursor, flatToMarkdown(map, toFlat)),
       end: Math.max(nextExpandedCursor, flatToMarkdown(map, toFlat)),
     };
-    const previousSelectionRange = selectionRangeRef.current;
     selectionRangeRef.current = nextSelectionRange;
     setIsEmpty(nextValue.length === 0);
     const previousSnapshot = snapshotRef.current;
@@ -714,12 +706,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       previousSnapshot.contextIds.every((id, index) => id === map.contextIds[index])
     );
     if (isApplyingControlledUpdateRef.current) return;
-    if (!snapshotChanged) {
-      if (didComposerSelectionChangeVisibly(previousSelectionRange, nextSelectionRange)) {
-        onVisibleSelectionChangeRef.current?.();
-      }
-      return;
-    }
+    if (!snapshotChanged) return;
     // A selection-only update while a newer prompt waits to be applied (a chip
     // was just inserted through the store) would report stale text and clobber
     // the prompt. Let the controlled rewrite land instead.
@@ -747,7 +734,8 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const editorAttributes = useMemo(
     () => ({
       class: cn(
-        "composer-tiptap -m-1 block max-h-52 min-h-19.5 overflow-y-auto p-1 whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+        // One line at rest; grows a line at a time to eight, then scrolls.
+        "composer-tiptap -m-1 block max-h-[calc(var(--chat-text-leading)*8+0.5rem)] min-h-[calc(var(--chat-text-leading)+0.5rem)] overflow-y-auto p-1 whitespace-pre-wrap wrap-break-word bg-transparent text-foreground focus:outline-none",
         className,
       ),
       "data-testid": "composer-editor",
@@ -1297,7 +1285,8 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         <ComposerCitationCommentContext value={citationCommentActions}>
           <div
             className={cn(
-              "relative flow-root font-(family-name:--font-composer,var(--font-sans)) text-(length:--font-size-prompt,var(--text-sm)) max-sm:pointer-coarse:text-(length:--font-size-prompt-touch)",
+              // The prompt reads at the chat's prose size; phones keep 16px so iOS never zooms.
+              "relative flow-root font-(family-name:--font-composer,var(--font-sans)) text-chat max-sm:pointer-coarse:text-(length:--font-size-prompt-touch)",
               containerClassName,
             )}
           >
@@ -1347,7 +1336,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
             {isEmpty && contextRecords.size === 0 && placeholder ? (
               <div
                 className={cn(
-                  "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
+                  "pointer-events-none absolute inset-0 truncate text-placeholder",
                   placeholderClassName,
                 )}
               >

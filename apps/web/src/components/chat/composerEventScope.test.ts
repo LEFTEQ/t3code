@@ -3,12 +3,7 @@ import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ComposerHandleContext, type ComposerHandleRef } from "../../composerHandleContext";
-import {
-  isInsideCollapsedComposerControls,
-  isInsideComposerFloatingLayer,
-  isInsideRestingComposerControlScope,
-  useComposerMenuProps,
-} from "./composerEventScope";
+import { isInsideComposerFloatingLayer, useComposerMenuProps } from "./composerEventScope";
 
 class FakeElement {
   constructor(private readonly matchingSelector: string | null) {}
@@ -61,60 +56,14 @@ describe("composer menu focus", () => {
   });
 });
 
-describe("composer event scopes", () => {
-  it("recognizes events from the portaled resting controls", () => {
+describe("composer floating layers", () => {
+  it("recognizes composer-owned floating layers and nothing else", () => {
     vi.stubGlobal("Element", FakeElement);
 
-    const target = new FakeElement('[data-chat-composer-resting-controls="true"]');
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(true);
-  });
-
-  it("recognizes events from the composer context strip controls", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement("[data-composer-context-control]");
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(true);
-  });
-
-  it("keeps resting image previews focused without expanding their subtree", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement('[data-chat-composer-resting-images="true"]');
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(true);
-  });
-
-  it("includes composer-owned floating layers in the resting control scope", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement('[data-chat-composer-floating-layer="true"]');
-    expect(isInsideComposerFloatingLayer(target as unknown as EventTarget)).toBe(true);
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(true);
-  });
-
-  it("leaves unrelated floating layers outside the composer scope", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement('[data-slot="popover-popup"]');
-    expect(isInsideComposerFloatingLayer(target as unknown as EventTarget)).toBe(false);
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(false);
-  });
-
-  it("leaves ordinary composer targets outside the portaled control scope", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement(null);
-    expect(isInsideRestingComposerControlScope(target as unknown as EventTarget)).toBe(false);
-    expect(isInsideRestingComposerControlScope(null)).toBe(false);
-  });
-
-  it("recognizes banner and drawer controls docked above the surface", () => {
-    vi.stubGlobal("Element", FakeElement);
-
-    const target = new FakeElement('[data-chat-composer-collapsed-controls="true"]');
-    expect(isInsideCollapsedComposerControls(target as unknown as EventTarget)).toBe(true);
-    expect(isInsideCollapsedComposerControls(new FakeElement(null) as unknown as EventTarget)).toBe(
-      false,
-    );
-    expect(isInsideCollapsedComposerControls(null)).toBe(false);
+    const owned = new FakeElement('[data-chat-composer-floating-layer="true"]');
+    const unrelated = new FakeElement('[data-slot="popover-popup"]');
+    expect(isInsideComposerFloatingLayer(owned as unknown as EventTarget)).toBe(true);
+    expect(isInsideComposerFloatingLayer(unrelated as unknown as EventTarget)).toBe(false);
+    expect(isInsideComposerFloatingLayer(null)).toBe(false);
   });
 });

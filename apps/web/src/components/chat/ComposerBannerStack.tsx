@@ -141,7 +141,6 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         >
           <ComposerBannerStackAlert
             item={frontItem}
-            attached
             exiting={exitingItemId === frontItem.id}
             onDismissRequest={() => requestDismiss(frontItem)}
           />
@@ -149,7 +148,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         {hasStack ? (
           <div
             ref={noticesRef}
-            className="relative z-20 min-h-3"
+            className="relative z-20"
             onPointerEnter={(event) => {
               if (event.pointerType === "touch") return;
               if (document.activeElement === peekRef.current) {
@@ -191,7 +190,11 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
                   setStackExpanded(true);
                 }}
                 className={cn(stackExpanded && "pointer-events-none invisible opacity-0")}
-              />
+              >
+                {stackedItems.length === 1
+                  ? "1 more notice"
+                  : `${String(stackedItems.length)} more notices`}
+              </ComposerBanner.Peek>
             ) : null}
             <div
               id={expandedItemsId}
@@ -208,7 +211,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
               <div className="min-h-0 overflow-hidden">
                 <div
                   className={cn(
-                    "transform-gpu space-y-2 pb-2 transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform]",
+                    "transform-gpu transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform]",
                     stackExpanded
                       ? "pointer-events-auto visible translate-y-0 opacity-100"
                       : "pointer-events-none invisible translate-y-1 opacity-0",
@@ -226,7 +229,6 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
                     >
                       <ComposerBannerStackAlert
                         item={item}
-                        attached={false}
                         exiting={exitingItemId === item.id}
                         onDismissRequest={() => requestDismiss(item)}
                       />
@@ -320,39 +322,22 @@ function NoticeDescription({ children, compact }: { children: ReactNode; compact
 
 function ComposerBannerStackAlert({
   item,
-  attached,
   exiting,
   onDismissRequest,
 }: {
   readonly item: ComposerBannerStackEntry;
-  readonly attached: boolean;
   readonly exiting: boolean;
   readonly onDismissRequest: () => void;
 }) {
   if ("content" in item) {
-    return (
-      <ComposerBanner.Root
-        density="comfortable"
-        placement={attached ? "attached" : "floating"}
-        variant={item.variant}
-      >
-        {item.content}
-      </ComposerBanner.Root>
-    );
+    return <ComposerBanner.Root variant={item.variant}>{item.content}</ComposerBanner.Root>;
   }
   return (
-    <ComposerBanner.Root
-      role="alert"
-      placement={attached ? "attached" : "floating"}
-      variant={item.variant}
-      density="comfortable"
-    >
+    <ComposerBanner.Root role="alert" variant={item.variant}>
       <ComposerBanner.Row layout={item.compact ? "wrap-actions-narrow" : "wrap-actions"}>
-        <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
-          {item.icon}
-        </ComposerBanner.Icon>
+        <ComposerBanner.Icon className="h-(--chat-row) self-start">{item.icon}</ComposerBanner.Icon>
         <ComposerBanner.Content className="whitespace-nowrap">
-          <span className="min-w-0 truncate font-medium leading-7 sm:leading-6">{item.title}</span>
+          <span className="min-w-0 truncate font-medium">{item.title}</span>
           {item.description ? (
             <NoticeDescription compact={item.compact ?? false}>
               {item.description}
