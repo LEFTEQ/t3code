@@ -124,7 +124,7 @@ const PaneBody = memo(function PaneBody({
   return (
     <div
       data-focus-ring={showFocusRing ? "true" : "false"}
-      className="@container/pane relative flex min-h-0 min-w-0 flex-1 flex-col after:pointer-events-none after:absolute after:inset-0 after:z-20 after:opacity-0 after:ring-1 after:ring-primary/60 after:ring-inset after:transition-opacity after:duration-(--workspace-focus-duration) after:ease-out data-[focus-ring=true]:after:opacity-100"
+      className="@container/pane group/pane relative flex min-h-0 min-w-0 flex-1 flex-col after:pointer-events-none after:absolute after:inset-0 after:z-20 after:opacity-0 after:ring-1 after:ring-primary/60 after:ring-inset after:transition-opacity after:duration-(--workspace-focus-duration) after:ease-out data-[focus-ring=true]:after:opacity-100"
     >
       <PaneAttentionEdgeBar pane={pane} />
       <PaneTabStrip pane={pane} chrome={chrome} isFocused={isFocused} />

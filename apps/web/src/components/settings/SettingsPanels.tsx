@@ -1579,38 +1579,38 @@ function ChatAppearanceSection() {
           </div>
         }
       />
-        <SettingsRow
-          {...searchableSetting("chat-width")}
-          description="Set how wide messages and the composer can grow on large screens."
-          resetAction={
-            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
-              <SettingResetButton
-                label="chat width"
-                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}
-              />
-            ) : null
-          }
-          control={
-            <div className="w-full sm:w-40">
-              <Select
-                value={settings.chatWidth}
-                onValueChange={(value) => {
-                  if (value === "comfortable" || value === "wide" || value === "full")
-                    updateSettings({ chatWidth: value });
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">
-                  <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="comfortable">Comfortable (default)</SelectItem>
-                  <SelectItem value="wide">Wide</SelectItem>
-                  <SelectItem value="full">Full</SelectItem>
-                </SelectPopup>
-              </Select>
-            </div>
-          }
-        />
+      <SettingsRow
+        {...searchableSetting("chat-width")}
+        description="Set how wide messages and the composer can grow on large screens."
+        resetAction={
+          settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
+            <SettingResetButton
+              label="chat width"
+              onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}
+            />
+          ) : null
+        }
+        control={
+          <div className="w-full sm:w-40">
+            <Select
+              value={settings.chatWidth}
+              onValueChange={(value) => {
+                if (value === "comfortable" || value === "wide" || value === "full")
+                  updateSettings({ chatWidth: value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">
+                <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="comfortable">Comfortable (default)</SelectItem>
+                <SelectItem value="wide">Wide</SelectItem>
+                <SelectItem value="full">Full</SelectItem>
+              </SelectPopup>
+            </Select>
+          </div>
+        }
+      />
     </SettingsSection>
   );
 }
@@ -2099,29 +2099,29 @@ function FontFamilySettingsRow({
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
       {size ? (
-      <Select
-        value={String(size.value)}
-        onValueChange={(next) => {
-          if (typeof next !== "string") return;
-          const parsed = Number(next);
-          if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
-            size.onChange(parsed);
-          }
-        }}
-      >
-        <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="end" alignItemWithTrigger={false}>
-          {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
-            (px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ),
-          )}
-        </SelectPopup>
-      </Select>
+        <Select
+          value={String(size.value)}
+          onValueChange={(next) => {
+            if (typeof next !== "string") return;
+            const parsed = Number(next);
+            if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
+              size.onChange(parsed);
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
+            <SelectValue>{size.value} px</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
+              (px) => (
+                <SelectItem hideIndicator key={px} value={String(px)}>
+                  {px} px
+                </SelectItem>
+              ),
+            )}
+          </SelectPopup>
+        </Select>
       ) : null}
     </div>
   );

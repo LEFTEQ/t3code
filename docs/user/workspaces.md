@@ -30,6 +30,10 @@ workspace shortcut.
   stays open.
 - When the window is too narrow for the layout, only the focused pane shows.
   Widen the window to get the panes back.
+- A pane has no header row. Its actions (open in your editor, commit and push,
+  scripts and the thread menu) appear at the pane's top-right while the pointer
+  is over the pane, or when you Tab to them. On a touch screen, use the command
+  palette or press and hold the tab instead.
 - Workspaces are saved on this device, per browser profile on the web. They do
   not follow you to other devices.
 - **All threads** at the bottom of the sidebar shows the classic thread list,

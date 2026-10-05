@@ -387,9 +387,7 @@ function SidebarListSwitchRow({
       >
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {count !== undefined ? (
-          <span className="text-xs tabular-nums">{count}</span>
-        ) : null}
+        {count !== undefined ? <span className="text-xs tabular-nums">{count}</span> : null}
       </button>
     </div>
   );

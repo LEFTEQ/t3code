@@ -21,33 +21,43 @@ interface ComposerPendingApprovalActionsProps {
 }
 
 const DEFAULT_APPROVAL_OPTIONS = [
+  { decision: "accept", label: "Allow once" },
+  { decision: "acceptForSession", label: "Allow for session" },
+  { decision: "decline", label: "Deny" },
   { decision: "cancel", label: "Cancel" },
-  { decision: "decline", label: "Decline" },
-  { decision: "acceptForSession", label: "Always allow this session" },
-  { decision: "accept", label: "Approve" },
 ] satisfies ReadonlyArray<ProviderApprovalOption>;
 
+// The dock keeps these on screen, in this order; anything else a provider offers
+// (cancel the turn, always allow an app) waits behind the ⋯ menu.
+const ROW_DECISIONS: ReadonlyArray<ProviderApprovalDecision> = [
+  "accept",
+  "acceptForSession",
+  "decline",
+];
+
+/** The needs-you dock's decision row: Allow once (primary), Allow for session, Deny, then ⋯. */
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   requestId,
   isResponding,
   options = DEFAULT_APPROVAL_OPTIONS,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
-  const primaryOptions = options.filter(
-    (option) => option.decision === "decline" || option.decision === "accept",
+  const primaryOptions = ROW_DECISIONS.flatMap(
+    (decision) => options.find((option) => option.decision === decision) ?? [],
   );
-  const moreOptions = options.filter(
-    (option) => option.decision !== "decline" && option.decision !== "accept",
-  );
+  const moreOptions = options.filter((option) => !ROW_DECISIONS.includes(option.decision));
 
   return (
-    <>
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-1 ps-(--chat-content-inset) pt-(--chat-gap)"
+      data-approval-actions
+    >
       {primaryOptions.map((option) => {
         const button = (
           <Button
             key={option.decision}
             size="xs"
-            variant={option.decision === "accept" ? "default" : "outline"}
+            variant={option.decision === "accept" ? "warning-outline" : "ghost"}
             disabled={isResponding}
             aria-description={option.warning}
             onClick={() => void onRespondToApproval(requestId, option.decision)}
@@ -69,7 +79,9 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         <Menu>
           <MenuTrigger
             disabled={isResponding}
-            render={<Button size="icon-xs" variant="outline" aria-label="More approval options" />}
+            render={
+              <Button size="icon-xs" variant="ghost-muted" aria-label="More approval options" />
+            }
           >
             <EllipsisIcon />
           </MenuTrigger>
@@ -100,6 +112,6 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
           </MenuPopup>
         </Menu>
       ) : null}
-    </>
+    </div>
   );
 });
