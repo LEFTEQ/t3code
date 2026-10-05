@@ -10031,7 +10031,7 @@ export default function ChatView(props: ChatViewProps) {
               ref={setComposerOverlayElement}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
-              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-(--chat-gap)"
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
             >
               <div
                 ref={attachDraftHeroTransitionGroupRef}
@@ -10266,7 +10266,7 @@ export default function ChatView(props: ChatViewProps) {
                       </ComposerSurface.Shell>
                       <div
                         aria-hidden
-                        className="h-[calc(env(safe-area-inset-bottom)+var(--chat-gap))]"
+                        className="h-[env(safe-area-inset-bottom)]"
                       />
                     </div>
                   </div>
