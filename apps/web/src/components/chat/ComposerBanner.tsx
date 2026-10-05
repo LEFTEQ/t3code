@@ -9,31 +9,15 @@ import { ScrollArea } from "../ui/scroll-area";
 
 export type ComposerBannerVariant = "default" | "error" | "info" | "success" | "warning";
 
-const surfaceColors = cn(
-  "[--chat-composer-attached-surface:var(--chat-composer-glass-surface,var(--card))]",
-  "dark:[--chat-composer-attached-surface:var(--chat-composer-glass-surface,var(--surface-raised))]",
-  "[html[data-theme-id]_&]:[--chat-composer-attached-surface:var(--app-theme-surface-raised)]",
-);
-
-const neutralOutline = cn(
-  "[--chat-composer-attached-outline:var(--chat-composer-outline,color-mix(in_srgb,var(--contrast-foreground)_8%,transparent))]",
-  "dark:[--chat-composer-attached-outline:var(--chat-composer-outline,color-mix(in_srgb,var(--color-white)_5%,transparent))]",
-  "[html[data-theme-id]_&]:[--chat-composer-attached-outline:var(--chat-composer-outline,var(--app-theme-toolbar-border))]",
-  "dark:[html[data-theme-id]:not([data-theme-id=t3-chat])_&]:[--chat-composer-attached-outline:var(--chat-composer-outline,color-mix(in_srgb,var(--app-theme-input)_30%,var(--background)))]",
-  "dark:[html[data-theme-id=t3-chat]_&]:[--chat-composer-attached-outline:#241e28]",
-);
-
-const variantColors: Record<ComposerBannerVariant, string> = {
-  default: neutralOutline,
-  error:
-    "[--chat-composer-attached-outline:color-mix(in_srgb,var(--error)_32%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--error)_8%,transparent)]",
-  info: neutralOutline,
-  success: neutralOutline,
-  warning:
-    "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_28%,transparent)] [--chat-composer-attached-tint:color-mix(in_srgb,var(--warning)_8%,transparent)]",
-};
-
-/** Shared glass and attachment seam, also used by the command menu without banner row padding. */
+/**
+ * Notices above the prompt line, in the chat's Document grammar: a hairline,
+ * then one row whose glyph sits in the transcript's gutter column and whose
+ * words carry the meaning. The variant only tints the glyph.
+ *
+ * `attached` rows sit in the composer column above the prompt (opaque, so the
+ * transcript never shows through); `floating` is a popover-like surface for
+ * notices revealed from the stack.
+ */
 function Surface({
   placement = "attached",
   variant = "default",
@@ -48,21 +32,10 @@ function Surface({
       data-composer-banner-surface={placement}
       data-variant={variant}
       className={cn(
-        surfaceColors,
-        "relative isolate border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
-        variantColors[variant],
-        // The mask cut-off (1rem) bleeds one pixel past the seam (1rem + 1px): Chromium
-        // drops the last device-pixel row of a filtered backdrop when the cut-off lands
-        // off the device-pixel grid, and the composer's surface starts exactly there.
-        // The composer's own glass covers the extra row, so the overlap never shows.
+        "group/banner relative isolate bg-background [--chat-composer-attachment-overlap:0px]",
         placement === "attached"
-          ? "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-2xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4"
-          : "[--chat-composer-attachment-overlap:0px] before:rounded-2xl",
-        "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
-        "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
-        "before:shadow-composer dark:before:shadow-composer-dark",
-        "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
+          ? "border-t border-border"
+          : "rounded-lg border border-border bg-popover text-popover-foreground shadow-lg",
         className,
       )}
       {...props}
@@ -70,18 +43,10 @@ function Surface({
   );
 }
 
-// A peeking notice uses the first hidden notice's severity, never the attached row's.
-const peekBorder: Record<ComposerBannerVariant, string> = {
-  default: "border-(--chat-composer-attached-outline)",
-  error: "border-destructive/24",
-  info: "border-(--chat-composer-attached-outline)",
-  success: "border-(--chat-composer-attached-outline)",
-  warning: "border-warning/24",
-};
-
+/** Reveals the notices behind the front one: a quiet count, not a second card. */
 function Peek({
   className,
-  variant = "default",
+  variant: _variant = "default",
   ...props
 }: ComponentProps<"button"> & { variant?: ComposerBannerVariant }) {
   return (
@@ -89,13 +54,7 @@ function Peek({
       type="button"
       data-slot="composer-banner-peek"
       className={cn(
-        surfaceColors,
-        neutralOutline,
-        "absolute inset-x-0 bottom-0 z-0 mx-auto h-3 w-[96%] cursor-pointer rounded-t-2xl border border-b-0 shadow-md",
-        "bg-(--chat-composer-attached-surface)/(--glass-opacity) backdrop-blur-(--glass-blur) backdrop-saturate-(--glass-saturation)",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:bg-(--chat-composer-attached-surface)",
-        "transition-opacity duration-150 ease-out focus-visible:outline-2 focus-visible:outline-ring",
-        peekBorder[variant],
+        "relative flex h-(--chat-row) w-full cursor-pointer items-center border-t border-border ps-(--chat-content-inset) text-start text-chat-meta text-muted-foreground outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-full after:min-h-(--chat-hit) after:-translate-y-1/2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
         className,
       )}
       {...props}
@@ -105,17 +64,7 @@ function Peek({
 
 function Attachment({ className, ...props }: ComponentProps<"div">) {
   return (
-    <div
-      data-slot="composer-banner-attachment"
-      className={cn(
-        "mx-auto -mb-[calc(1rem+1px)] w-[calc(100%-2*var(--chat-composer-drawer-inset))]",
-        // Adjacent attachments share their outline, including notices outside the form.
-        "[&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:rounded-none [&+[data-slot=composer-banner-attachment]_[data-composer-banner-surface=attached]]:before:border-t-0",
-        "[&+:has([data-chat-composer-form])_[data-chat-composer-form]>[data-slot=composer-banner-attachment]:first-child_[data-composer-banner-surface=attached]]:before:rounded-none [&+:has([data-chat-composer-form])_[data-chat-composer-form]>[data-slot=composer-banner-attachment]:first-child_[data-composer-banner-surface=attached]]:before:border-t-0",
-        className,
-      )}
-      {...props}
-    />
+    <div data-slot="composer-banner-attachment" className={cn("w-full", className)} {...props} />
   );
 }
 
@@ -123,7 +72,7 @@ function Dock({ className, ...props }: ComponentProps<"div">) {
   return (
     <Attachment
       className={cn(
-        "flex items-end gap-1 not-has-data-[composer-banner-surface=attached]:hidden",
+        "flex items-stretch not-has-data-[composer-banner-surface=attached]:hidden",
         className,
       )}
       {...props}
@@ -131,23 +80,14 @@ function Dock({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** Attachments share a column while neighboring tabs keep their own surface. */
+/** Attachments share a column while a neighboring tab keeps its own cell. */
 function Column({ className, ...props }: ComponentProps<"div">) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-1 flex-col empty:hidden",
-        "[&>[data-slot=composer-banner-attachment]]:w-full [&>[data-slot=composer-banner-attachment]:last-child]:mb-0",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn("flex min-w-0 flex-1 flex-col empty:hidden", className)} {...props} />;
 }
 
 function Root({
   className,
-  density = "default",
+  density: _density = "default",
   placement = "attached",
   variant = "default",
   width = "fill",
@@ -161,9 +101,7 @@ function Root({
   return (
     <Surface
       className={cn(
-        "min-w-0 px-1 py-(--composer-banner-padding-block) after:block after:h-(--chat-composer-attachment-overlap) text-xs/4 [--composer-banner-icon-column:--spacing(7)] [--composer-banner-padding-block:--spacing(1)] sm:[--composer-banner-icon-column:--spacing(6)]",
-        density === "comfortable" && "[--composer-banner-padding-block:--spacing(1.25)]",
-        density === "spacious" && "px-3 [--composer-banner-padding-block:--spacing(3)]",
+        "min-w-0 py-0.5 text-chat-meta [--composer-banner-icon-column:var(--chat-glyph)]",
         width === "content" ? "w-fit max-w-full flex-none" : "@container",
         className,
       )}
@@ -187,14 +125,14 @@ function Row({
 }) {
   const rowProps = {
     className: cn(
-      "group/banner-row grid min-h-(--composer-banner-icon-column) w-full min-w-0 grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)_auto] items-center gap-x-1 text-start",
+      "group/banner-row grid min-h-(--chat-row) w-full min-w-0 grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)_auto] items-center gap-x-1 text-start",
       "not-has-[>[data-slot=composer-banner-actions]]:grid-cols-[var(--composer-banner-icon-column)_minmax(0,1fr)]",
-      "[&:is(button)]:cursor-pointer [&:is(button)]:rounded-md [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
-      layout === "wrap-actions" &&
-        "@max-[400px]:*:data-[slot=composer-banner-content]:min-h-(--composer-banner-icon-column)",
+      "[&:is(button)]:cursor-pointer [&:is(button)]:focus-visible:outline-2 [&:is(button)]:focus-visible:-outline-offset-2 [&:is(button)]:focus-visible:outline-ring",
+      (layout === "wrap-actions" || layout === "approval") &&
+        "@max-[400px]:*:data-[slot=composer-banner-content]:min-h-(--chat-row)",
       layout === "wrap-actions-narrow" &&
-        "@max-[320px]:*:data-[slot=composer-banner-content]:min-h-(--composer-banner-icon-column)",
-      layout === "approval" && "items-start gap-x-2 gap-y-3",
+        "@max-[320px]:*:data-[slot=composer-banner-content]:min-h-(--chat-row)",
+      layout === "approval" && "items-start gap-y-1",
       className,
     ),
     "data-composer-banner-row": "true",
@@ -207,14 +145,15 @@ function Row({
   });
 }
 
+/** The row's glyph in the gutter column; only warnings and errors take color. */
 function Icon({ className, ...props }: ComponentProps<"span">) {
   return (
     <span
       aria-hidden
       data-slot="composer-banner-icon"
       className={cn(
-        "col-start-1 row-start-1 flex w-(--composer-banner-icon-column) min-w-0 flex-none items-center justify-center text-muted-foreground [&>svg]:size-3",
-        "group-data-[composer-banner-layout=approval]/banner-row:pt-0.5 group-data-[composer-banner-layout=approval]/banner-row:text-warning group-data-[composer-banner-layout=approval]/banner-row:[&>svg]:size-4",
+        "col-start-1 row-start-1 flex w-(--composer-banner-icon-column) min-w-0 flex-none items-center justify-center text-icon-muted [&>svg]:size-3",
+        "group-data-[variant=warning]/banner:text-warning-foreground group-data-[variant=error]/banner:text-error-foreground group-data-[variant=info]/banner:text-info-foreground",
         className,
       )}
       {...props}
@@ -228,9 +167,8 @@ function Content({ className, ...props }: ComponentProps<"span">) {
       data-slot="composer-banner-content"
       className={cn(
         "col-start-2 row-start-1 flex min-w-0 items-center gap-1 *:data-[slot=composer-banner-separator]:mx-0",
-        "@max-[560px]:group-data-[composer-banner-layout=approval]/banner-row:col-end-4",
-        "group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:col-[1/3] group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:ps-2 sm:group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:ps-1.5",
-        "group-not-has-[>[data-slot=composer-banner-icon],>[data-slot=composer-banner-actions]]/banner-row:pe-2 sm:group-not-has-[>[data-slot=composer-banner-icon],>[data-slot=composer-banner-actions]]/banner-row:pe-1.5",
+        "@max-[400px]:group-data-[composer-banner-layout=approval]/banner-row:col-end-4",
+        "group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:col-[1/3] group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:ps-(--chat-content-inset)",
         className,
       )}
       {...props}
@@ -243,7 +181,7 @@ function Separator() {
     <span
       aria-hidden
       data-slot="composer-banner-separator"
-      className="mx-1 inline-block flex-none text-muted-foreground/40"
+      className="mx-1 inline-block flex-none text-icon-muted"
     >
       ·
     </span>
@@ -256,9 +194,9 @@ function Actions({ className, ...props }: ComponentProps<"span">) {
       data-slot="composer-banner-actions"
       className={cn(
         "col-start-3 row-start-1 flex flex-wrap items-center justify-end gap-1",
-        "group-data-[composer-banner-layout=approval]/banner-row:self-center group-data-[composer-banner-layout=approval]/banner-row:gap-1.5 @max-[560px]:group-data-[composer-banner-layout=approval]/banner-row:col-start-2 @max-[560px]:group-data-[composer-banner-layout=approval]/banner-row:col-end-4 @max-[560px]:group-data-[composer-banner-layout=approval]/banner-row:row-start-2",
+        "@max-[400px]:group-data-[composer-banner-layout=approval]/banner-row:col-start-2 @max-[400px]:group-data-[composer-banner-layout=approval]/banner-row:col-end-4 @max-[400px]:group-data-[composer-banner-layout=approval]/banner-row:row-start-2 @max-[400px]:group-data-[composer-banner-layout=approval]/banner-row:justify-start",
         "@max-[400px]:group-data-[composer-banner-layout=wrap-actions]/banner-row:has-[>:nth-child(2)]:col-start-2 @max-[400px]:group-data-[composer-banner-layout=wrap-actions]/banner-row:has-[>:nth-child(2)]:col-end-4 @max-[400px]:group-data-[composer-banner-layout=wrap-actions]/banner-row:has-[>:nth-child(2)]:row-start-2 @max-[400px]:group-data-[composer-banner-layout=wrap-actions]/banner-row:has-[>:nth-child(2)]:justify-end",
-        "@max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:col-start-2 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:col-end-4 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:row-start-2 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:-ms-2 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:justify-start",
+        "@max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:col-start-2 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:col-end-4 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:row-start-2 @max-[320px]:group-data-[composer-banner-layout=wrap-actions-narrow]/banner-row:has-[>:nth-child(2)]:justify-start",
         className,
       )}
       {...props}
@@ -271,10 +209,7 @@ function Children({ className, render, ...props }: useRender.ComponentProps<"div
   return useRender({
     defaultTagName: "div",
     render,
-    props: mergeProps<"div">(
-      { className: cn("grid gap-px [&_[data-composer-banner-row]]:min-h-5", className) },
-      props,
-    ),
+    props: mergeProps<"div">({ className: cn("grid", className) }, props),
   });
 }
 
@@ -305,8 +240,9 @@ function Count({ className, ...props }: ComponentProps<"span">) {
   );
 }
 
+/** Body text aligned with the content column, under its row. */
 function Body({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("min-w-0 ps-8 sm:ps-7", className)} {...props} />;
+  return <div className={cn("min-w-0 ps-(--chat-content-inset)", className)} {...props} />;
 }
 
 function Dot({ className, ...props }: ComponentProps<"span">) {

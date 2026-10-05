@@ -1,13 +1,12 @@
-import { Spinner } from "~/components/ui/spinner";
-
 import { threadSyncLabel, type ThreadSyncPhase } from "../../threadSync";
+import { ChatGlyphMark } from "./ChatGutter";
 import { ComposerBanner } from "./ComposerBanner";
 
 export function ComposerActivityRow({ phase }: { readonly phase: ThreadSyncPhase }) {
   return (
     <ComposerBanner.Row>
       <ComposerBanner.Icon>
-        <Spinner />
+        <ChatGlyphMark glyph="running" />
       </ComposerBanner.Icon>
       <ComposerBanner.Content>
         <span

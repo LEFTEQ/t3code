@@ -21,6 +21,15 @@ Android uses **Material You Layout** by default unless you have turned it off in
 It changes shapes, spacing, and controls independently
 of the selected theme.
 
+## Chat density
+
+On web and desktop, **Settings → Appearance → Chat** sets **Chat density** (Compact, Comfortable, or
+Ultra) and **Text size** for every chat, in workspace panes and the single-thread view. Compact is the
+default. Text size scales the chat's text and spacing together, and the prompt follows it, so the
+**Prompt font** row only chooses the family. Code in the chat follows the density; **Code font** sizes
+diffs and file previews. On macOS, **Ctrl+Cmd+=** and **Ctrl+Cmd+-** step the density and
+**Ctrl+Cmd+0** resets it; the command palette offers the same through **Chat density**.
+
 ## Motion
 
 The main sidebar, right panel, terminal drawer, and workspace panes animate for 250 ms by default.

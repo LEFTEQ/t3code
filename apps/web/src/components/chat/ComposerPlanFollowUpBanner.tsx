@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { ChatGlyphMark } from "./ChatGutter";
 import { ComposerBanner } from "./ComposerBanner";
 
 export const ComposerPlanFollowUpBanner = memo(function ComposerPlanFollowUpBanner({
@@ -8,11 +9,13 @@ export const ComposerPlanFollowUpBanner = memo(function ComposerPlanFollowUpBann
 }) {
   return (
     <ComposerBanner.Row>
-      <ComposerBanner.Icon />
+      <ComposerBanner.Icon>
+        <ChatGlyphMark glyph="info" />
+      </ComposerBanner.Icon>
       <ComposerBanner.Content>
         <span className="shrink-0 font-medium text-muted-foreground">Plan ready</span>
         {planTitle ? (
-          <span className="min-w-0 flex-1 truncate text-foreground/85">{planTitle}</span>
+          <span className="min-w-0 flex-1 truncate text-foreground">{planTitle}</span>
         ) : null}
       </ComposerBanner.Content>
     </ComposerBanner.Row>

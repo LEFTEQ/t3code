@@ -5,10 +5,10 @@ import {
   derivePendingUserInputProgress,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
-import { CheckIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { cn } from "~/lib/utils";
-import { ComposerBanner } from "./ComposerBanner";
+import { ChatGutterRow } from "./ChatGutter";
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
@@ -178,63 +178,74 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         setCollapsedQuestionId(open ? null : activeQuestion.id);
       }}
     >
-      <CollapsibleTrigger
-        render={<ComposerBanner.Row render={<button type="button" />} />}
-        title={
-          isCollapsed ? "Show the question and its options" : "Hide the question and its options"
-        }
-        data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
+      <div
+        className="w-full min-w-0 border-t border-warning/70 bg-linear-to-b from-warning/8 to-transparent pt-(--chat-gap)"
+        data-chat-needs-you="question"
       >
-        <ComposerBanner.Icon />
-        <ComposerBanner.Content>
-          <span className="shrink-0 font-medium text-muted-foreground">
-            {activeQuestion.header}
-          </span>
-          {isCollapsed ? (
-            <span className="min-w-0 flex-1 truncate text-secondary-label">
+        <ChatGutterRow glyph="needs-you" size="prose">
+          <CollapsibleTrigger
+            render={<button type="button" />}
+            className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-xs text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={
+              isCollapsed
+                ? "Show the question and its options"
+                : "Hide the question and its options"
+            }
+            data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
+          >
+            <span
+              className={cn(
+                "min-w-0 flex-1 text-chat font-semibold text-foreground wrap-anywhere",
+                isCollapsed && "truncate",
+              )}
+            >
               {activeQuestion.question}
             </span>
-          ) : null}
-        </ComposerBanner.Content>
-        <ComposerBanner.Actions>
-          {prompt.questions.length > 1 ? (
-            <span className="text-3xs font-medium text-muted-foreground tabular-nums">
-              {questionIndex + 1}/{prompt.questions.length}
+            <span className="flex shrink-0 items-baseline gap-1.5 text-chat-meta text-muted-foreground">
+              <span className="max-w-32 truncate">{activeQuestion.header}</span>
+              {prompt.questions.length > 1 ? (
+                <span className="tabular-nums">
+                  · question {questionIndex + 1} of {prompt.questions.length}
+                </span>
+              ) : null}
+              <ChevronDownIcon
+                aria-hidden
+                className={cn("size-3 self-center", isCollapsed && "-rotate-90")}
+              />
+              {prompt.dismissible ? (
+                // Sits inside the trigger button, so stop the click from toggling
+                // the disclosure. Dismiss closes the question without a reply.
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Dismiss question without answering"
+                  aria-disabled={isResponding || undefined}
+                  data-pending-user-input-dismiss
+                  className="relative grid size-4 place-items-center self-center rounded-xs outline-none before:absolute before:-inset-1 before:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!isResponding) onDismiss(prompt.requestId);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!isResponding) onDismiss(prompt.requestId);
+                  }}
+                >
+                  <XIcon className="size-3" />
+                </span>
+              ) : null}
             </span>
-          ) : null}
-          <ComposerBanner.ToggleIcon expanded={!isCollapsed} />
-          {prompt.dismissible ? (
-            // Sits inside the trigger button, so stop the click from toggling
-            // the disclosure. Dismiss closes the question without a reply.
-            <ComposerBanner.Dismiss
-              render={<span role="button" tabIndex={0} />}
-              aria-label="Dismiss question without answering"
-              title="Dismiss question without answering"
-              disabled={isResponding}
-              data-pending-user-input-dismiss
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onDismiss(prompt.requestId);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
-                onDismiss(prompt.requestId);
-              }}
-            />
-          ) : null}
-        </ComposerBanner.Actions>
-      </CollapsibleTrigger>
-      <CollapsiblePanel>
-        <ComposerBanner.Scroll>
-          <ComposerBanner.Body className="pe-1 pb-1 wrap-anywhere">
-            <p className="text-sm text-foreground/85">{activeQuestion.question}</p>
+          </CollapsibleTrigger>
+        </ChatGutterRow>
+        <CollapsiblePanel>
+          <div className="max-h-64 overflow-y-auto ps-(--chat-content-inset) pt-0.5 [scrollbar-width:thin]">
             {activeQuestion.multiSelect ? (
-              <p className="mt-1 text-secondary-label text-xs">Select one or more options.</p>
+              <p className="text-chat-meta text-muted-foreground">Select one or more options.</p>
             ) : null}
-            <div className="mt-2 space-y-0.5">
+            <div className="flex flex-col">
               {activeQuestion.options.map((option, index) => {
                 const optionValue = option.value ?? option.label;
                 const isOptimisticallySelected =
@@ -244,53 +255,50 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   isOptimisticallySelected ||
                   (!customAnswerActive && progress.selectedOptionValues.includes(optionValue));
                 const shortcutKey = index < 9 ? index + 1 : null;
-                const className = cn(
-                  "group flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-primary/25",
-                  isSelected
-                    ? "bg-muted/55 text-foreground"
-                    : "bg-transparent text-foreground/85 hover:bg-muted/30",
-                  isResponding && "opacity-50 cursor-not-allowed",
-                  !isResponding && "cursor-pointer",
-                );
-                const content = (
-                  <>
-                    <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">{option.label}</span>
-                      {option.description && option.description !== option.label ? (
-                        <span className="text-secondary-label text-2xs">{option.description}</span>
-                      ) : null}
-                    </div>
-                    {isSelected ? (
-                      <CheckIcon className="size-3.5 shrink-0 text-primary" />
-                    ) : shortcutKey !== null ? (
-                      <kbd
-                        className={cn(
-                          "flex size-5 shrink-0 items-center justify-center text-3xs font-medium text-muted-foreground tabular-nums",
-                        )}
-                      >
-                        {shortcutKey}
-                      </kbd>
-                    ) : null}
-                  </>
-                );
                 return (
                   <button
                     key={`${activeQuestion.id}:${optionValue}`}
                     type="button"
                     disabled={isResponding}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       handleOptionSelection(activeQuestion.id, optionValue);
                     }}
-                    className={className}
+                    className={cn(
+                      "flex min-h-6 w-full items-baseline gap-2 rounded-sm px-1 py-0.5 text-left text-chat outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      isSelected
+                        ? "bg-warning/12 text-foreground"
+                        : "text-foreground hover:bg-muted/50",
+                      isResponding ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                    )}
                   >
-                    {content}
+                    <kbd
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center self-center rounded-xs border font-sans text-3xs font-medium tabular-nums",
+                        isSelected
+                          ? "border-warning/70 bg-warning/25 text-warning-foreground"
+                          : "border-border text-muted-foreground",
+                        shortcutKey === null && "invisible",
+                      )}
+                    >
+                      {shortcutKey}
+                    </kbd>
+                    <span className="min-w-0 wrap-anywhere">
+                      <span className="font-medium">{option.label}</span>
+                      {option.description && option.description !== option.label ? (
+                        <span className="text-muted-foreground"> — {option.description}</span>
+                      ) : null}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </ComposerBanner.Body>
-        </ComposerBanner.Scroll>
-      </CollapsiblePanel>
+            <p className="pt-0.5 pb-(--chat-gap) text-right text-chat-meta text-muted-foreground">
+              or type your own answer below
+            </p>
+          </div>
+        </CollapsiblePanel>
+      </div>
     </Collapsible>
   );
 });

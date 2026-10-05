@@ -9,7 +9,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { ContextMenuItem, EnvironmentId, VcsRef, ThreadId } from "@t3tools/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronDownIcon, GitBranchIcon } from "lucide-react";
+import { GitBranchIcon } from "lucide-react";
 import {
   useCallback,
   useDeferredValue,
@@ -783,10 +783,7 @@ export function BranchToolbarBranchSelector({
       open={isBranchMenuOpen}
       value={resolvedActiveBranch}
     >
-      <div
-        className={cn("flex min-w-0 items-center gap-1", className)}
-        data-composer-context-control
-      >
+      <div className={cn("flex min-w-0 items-center gap-1", className)}>
         <ThreadPullRequestBadgeControl
           render={<ComposerControl size="xs" />}
           badge={prBadge}
@@ -811,20 +808,12 @@ export function BranchToolbarBranchSelector({
             // momentary 0.97 shrink would drag the open popup ~3px sideways.
             className="min-w-0 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
+            data-composer-shortcut="composer.branch"
           >
-            <GitBranchIcon className="size-3 shrink-0 opacity-70" />
-            <span
-              data-composer-label
-              className="min-w-0 max-w-[240px] group-data-[compact]/composer-context:max-w-0"
-            >
-              <span
-                data-composer-label-motion
-                className="flex w-full max-w-[240px] transition-opacity duration-180 ease-drawer group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none"
-              >
-                <MiddleTruncate value={triggerLabel} />
-              </span>
+            <GitBranchIcon className="size-3 shrink-0" />
+            <span className="flex min-w-0 max-w-60">
+              <MiddleTruncate value={triggerLabel} />
             </span>
-            <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
           </ComboboxTrigger>
         </span>
       </div>

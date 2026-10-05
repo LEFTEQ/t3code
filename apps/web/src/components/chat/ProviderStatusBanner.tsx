@@ -1,10 +1,11 @@
 import { type ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { memo } from "react";
-import { InfoIcon, XIcon } from "lucide-react";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
-import { Button, InlineButton } from "../ui/button";
+import { XIcon } from "lucide-react";
+import { Button } from "../ui/button";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ChatGutterRow } from "./ChatGutter";
+import { ChatRowAction } from "./ChatRowAction";
 
 /** Unsupported and broken versions fail mid-turn, so they warn even when ready. */
 function getIncompatibleVersion(status: ServerProvider) {
@@ -99,30 +100,42 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const message = incompatible?.message ?? getProviderStatusMessage(status);
   const isWarning = status.status === "warning" || incompatible !== null;
 
+  // One flat row over the top of the transcript: the title says what is wrong
+  // in words, the message follows dim on the same line (full text on hover).
+  // Opaque with a hairline below so it reads over the conversation it covers.
   return (
-    <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
-      <Alert
-        variant={isWarning ? "warning" : "error"}
-        role={incompatible && incompatible.status !== "broken" ? "status" : "alert"}
-        surface="glass"
-        controlAlignment="first-line"
+    <div
+      role={incompatible && incompatible.status !== "broken" ? "status" : "alert"}
+      className="pointer-events-auto border-b border-border/70 bg-background"
+    >
+      <ChatGutterRow
+        glyph={isWarning ? "info" : "failed"}
+        glyphClassName={isWarning ? "text-warning-foreground" : undefined}
+        className="mx-auto w-full max-w-(--chat-max-width) items-center px-(--chat-gutter) py-0.5"
       >
-        <InfoIcon />
-        <AlertTitle>{title}</AlertTitle>
-        <AlertDescription>
+        <div className="flex min-h-6 min-w-0 items-center gap-3">
           <Tooltip>
-            <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
+            <TooltipTrigger render={<p className="min-w-0 flex-1 truncate text-chat-meta" />}>
+              <span
+                className={
+                  isWarning
+                    ? "font-medium text-warning-foreground"
+                    : "font-medium text-error-foreground"
+                }
+              >
+                {title}
+              </span>
+              <span className="text-muted-foreground"> — {message}</span>
+            </TooltipTrigger>
             <TooltipPopup side="top" className="whitespace-pre-wrap">
               {message}
             </TooltipPopup>
           </Tooltip>
           {onOpenProviderSetup && hasProviderSetup(status) ? (
-            <InlineButton onClick={() => onOpenProviderSetup(status.instanceId)}>
+            <ChatRowAction tone="accent" onClick={() => onOpenProviderSetup(status.instanceId)}>
               Open provider setup
-            </InlineButton>
+            </ChatRowAction>
           ) : null}
-        </AlertDescription>
-        <AlertAction>
           <Button
             aria-label={`Dismiss ${providerName} provider ${status.status}`}
             onClick={onDismiss}
@@ -131,8 +144,8 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
           >
             <XIcon />
           </Button>
-        </AlertAction>
-      </Alert>
+        </div>
+      </ChatGutterRow>
     </div>
   );
 });

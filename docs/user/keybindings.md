@@ -62,6 +62,13 @@ on macOS and Ctrl on Windows and Linux, including GNOME, KDE Plasma, Niri, and
 Hyprland. If a custom desktop shortcut takes the same keys, choose another binding
 in Settings.
 
+## Chat density
+
+On macOS, `ctrl+mod+=` makes the chat roomier, `ctrl+mod+-` denser, and `ctrl+mod+0` returns
+to Compact at 100% text size. Elsewhere, use **Cycle chat density** or **Chat density** in the
+command palette, or bind the `chat.density.roomier`, `chat.density.denser`, and
+`chat.density.reset` commands.
+
 ## Copy pull request references
 
 With a PR open in the right panel or on the Pull Requests page, use `mod+shift+c`

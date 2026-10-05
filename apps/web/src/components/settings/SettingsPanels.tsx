@@ -20,25 +20,27 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  CHAT_TEXT_SCALE_STEP,
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
+  type ChatDensity,
   type ChatWidth,
   type DiffLayout,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
+  MAX_CHAT_TEXT_SCALE,
   MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
   MAX_PANEL_ANIMATION_DURATION_MS,
-  MAX_PROMPT_FONT_SIZE,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MAX_TERMINAL_FONT_SIZE,
+  MIN_CHAT_TEXT_SCALE,
   MIN_CODE_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PANEL_ANIMATION_DURATION_MS,
-  MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   MIN_TERMINAL_FONT_SIZE,
@@ -130,6 +132,13 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
+import {
+  CHAT_DENSITY_LABELS,
+  CHAT_DENSITY_ORDER,
+  chatDensityVariables,
+  clampChatTextScale,
+} from "../../chatDensity";
+import { ChatGutterRow, ChatRoleLabel } from "../chat/ChatGutter";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import {
   NumberField,
@@ -540,6 +549,8 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Diff colors"]
         : []),
       ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
+      ...(settings.chatDensity !== DEFAULT_UNIFIED_SETTINGS.chatDensity ? ["Chat density"] : []),
+      ...(settings.chatTextScale !== DEFAULT_UNIFIED_SETTINGS.chatTextScale ? ["Text size"] : []),
       ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
         ? ["Panel animations"]
         : []),
@@ -584,9 +595,6 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
         ? ["Show skills in slash menu"]
-        : []),
-      ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
-        ? ["Collapse composer on scroll"]
         : []),
       ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
         ? ["Rich text composer"]
@@ -650,12 +658,13 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.appearanceContrast,
       settings.diffColorScheme,
       settings.chatWidth,
+      settings.chatDensity,
+      settings.chatTextScale,
       settings.enableAgentBrowserAccess,
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
-      settings.composerCollapseOnScroll,
       settings.composerRichTextEnabled,
       settings.sendShortcut,
       settings.followUpBehavior,
@@ -674,7 +683,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontFamilyTerminal,
       settings.fontSizeCode,
       settings.fontSizeInterface,
-      settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
       settings.panelAnimationDurationMs,
@@ -762,6 +770,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
+      chatDensity: DEFAULT_UNIFIED_SETTINGS.chatDensity,
+      chatTextScale: DEFAULT_UNIFIED_SETTINGS.chatTextScale,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
@@ -771,7 +781,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-      composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
@@ -803,7 +812,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
       fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
       fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-      fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
       browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
@@ -1393,39 +1401,9 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
-        <SettingsRow
-          {...searchableSetting("chat-width")}
-          description="Set how wide messages and the composer can grow on large screens."
-          resetAction={
-            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
-              <SettingResetButton
-                label="chat width"
-                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}
-              />
-            ) : null
-          }
-          control={
-            <div className="w-full sm:w-40">
-              <Select
-                value={settings.chatWidth}
-                onValueChange={(value) => {
-                  if (value === "comfortable" || value === "wide" || value === "full")
-                    updateSettings({ chatWidth: value });
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">
-                  <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="comfortable">Comfortable (default)</SelectItem>
-                  <SelectItem value="wide">Wide</SelectItem>
-                  <SelectItem value="full">Full</SelectItem>
-                </SelectPopup>
-              </Select>
-            </div>
-          }
-        />
       </SettingsSection>
+
+      <ChatAppearanceSection />
 
       <SettingsSection id="motion" title="Motion">
         <SettingsRow
@@ -1506,6 +1484,164 @@ function useFontDefaultFamilies() {
   };
 }
 
+/** Appearance → Chat: the density and text size every chat surface is sized from, and its width. */
+function ChatAppearanceSection() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const textScaleRatio =
+    (settings.chatTextScale - MIN_CHAT_TEXT_SCALE) / (MAX_CHAT_TEXT_SCALE - MIN_CHAT_TEXT_SCALE);
+  const textScaleSliderStyle = {
+    "--settings-slider-progress": `${textScaleRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - textScaleRatio}rem`,
+  } as CSSProperties;
+
+  return (
+    <SettingsSection id="appearance-chat" title="Chat">
+      <SettingsRow
+        {...searchableSetting("chat-density")}
+        description="How tightly messages, work and the prompt are spaced, in panes and the single-thread view."
+        resetAction={
+          settings.chatDensity !== DEFAULT_UNIFIED_SETTINGS.chatDensity ? (
+            <SettingResetButton
+              label="chat density"
+              onClick={() => updateSettings({ chatDensity: DEFAULT_UNIFIED_SETTINGS.chatDensity })}
+            />
+          ) : null
+        }
+        control={
+          <div className="w-full sm:w-40">
+            <Select
+              value={settings.chatDensity}
+              onValueChange={(value) => {
+                const chatDensity = CHAT_DENSITY_ORDER.find((option) => option === value);
+                if (chatDensity) updateSettings({ chatDensity });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat density">
+                <SelectValue>{CHAT_DENSITY_LABELS[settings.chatDensity]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {CHAT_DENSITY_ORDER.map((density) => (
+                  <SelectItem key={density} value={density}>
+                    {CHAT_DENSITY_LABELS[density]}
+                    {density === DEFAULT_UNIFIED_SETTINGS.chatDensity ? " (default)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </div>
+        }
+      >
+        <ChatDensityPreview density={settings.chatDensity} textScale={settings.chatTextScale} />
+      </SettingsRow>
+      <SettingsRow
+        {...searchableSetting("chat-text-size")}
+        description="Scale the chat's text and spacing together."
+        resetAction={
+          settings.chatTextScale !== DEFAULT_UNIFIED_SETTINGS.chatTextScale ? (
+            <SettingResetButton
+              label="text size"
+              onClick={() =>
+                updateSettings({ chatTextScale: DEFAULT_UNIFIED_SETTINGS.chatTextScale })
+              }
+            />
+          ) : null
+        }
+        control={
+          <div className="flex w-full items-center gap-3 sm:w-52">
+            <output
+              className="min-w-14 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+              htmlFor="chat-text-scale"
+            >
+              {settings.chatTextScale}%
+            </output>
+            <input
+              aria-label="Chat text size"
+              className="settings-slider min-w-0 flex-1"
+              id="chat-text-scale"
+              max={MAX_CHAT_TEXT_SCALE}
+              min={MIN_CHAT_TEXT_SCALE}
+              onChange={(event) => {
+                updateSettings({
+                  chatTextScale: clampChatTextScale(Number(event.currentTarget.value)),
+                });
+              }}
+              step={CHAT_TEXT_SCALE_STEP}
+              style={textScaleSliderStyle}
+              type="range"
+              value={settings.chatTextScale}
+            />
+          </div>
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("chat-width")}
+        description="Set how wide messages and the composer can grow on large screens."
+        resetAction={
+          settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (
+            <SettingResetButton
+              label="chat width"
+              onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}
+            />
+          ) : null
+        }
+        control={
+          <div className="w-full sm:w-40">
+            <Select
+              value={settings.chatWidth}
+              onValueChange={(value) => {
+                if (value === "comfortable" || value === "wide" || value === "full")
+                  updateSettings({ chatWidth: value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">
+                <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="comfortable">Comfortable (default)</SelectItem>
+                <SelectItem value="wide">Wide</SelectItem>
+                <SelectItem value="full">Full</SelectItem>
+              </SelectPopup>
+            </Select>
+          </div>
+        }
+      />
+    </SettingsSection>
+  );
+}
+
+/** A short turn rendered with a density's own tokens, so the setting shows what it changes. */
+function ChatDensityPreview({ density, textScale }: { density: ChatDensity; textScale: number }) {
+  return (
+    <div
+      aria-hidden
+      className="mt-1 mb-2 flex flex-col gap-(--chat-gap) rounded-lg border border-border bg-background px-(--chat-gutter) py-(--chat-gap)"
+      style={chatDensityVariables(density, textScale) as CSSProperties}
+    >
+      <div>
+        <ChatRoleLabel>You</ChatRoleLabel>
+        <ChatGutterRow glyph="you" size="prose">
+          <p className="text-chat text-foreground">why is the mac so slow right now?</p>
+        </ChatGutterRow>
+      </div>
+      <div className="mt-[calc(var(--chat-turn-gap)-var(--chat-gap))]">
+        <ChatRoleLabel>Claude</ChatRoleLabel>
+        <ChatGutterRow glyph="action" className="h-(--chat-row) items-center">
+          <span className="text-chat-meta text-muted-foreground">5 actions · 2 edits ›</span>
+        </ChatGutterRow>
+      </div>
+      <ChatGutterRow glyph={null} size="prose">
+        <p className="text-chat text-foreground">
+          An Android emulator holds 6.3 GB; quitting it frees most of that memory.
+        </p>
+      </ChatGutterRow>
+      <ChatGutterRow glyph={null}>
+        <span className="text-chat-meta text-muted-foreground">Worked 44s · 2 files +12 −3</span>
+      </ChatGutterRow>
+    </div>
+  );
+}
+
 function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1544,25 +1680,14 @@ function PromptFontRow() {
   return (
     <FontFamilySettingsRow
       {...searchableSetting("prompt-font")}
-      description="Only the box you write prompts in. Mono works well here."
+      description="Only the box you write prompts in. Mono works well here. Its size follows Chat density and Text size."
       defaultFamily={defaults.interfaceFamily}
       defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer}
       value={settings.fontFamilyComposer}
       onValueChange={(fontFamilyComposer) => updateSettings({ fontFamilyComposer })}
       onReset={() =>
-        updateSettings({
-          fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
-          fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        })
+        updateSettings({ fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer })
       }
-      size={{
-        label: "Prompt font size",
-        min: MIN_PROMPT_FONT_SIZE,
-        max: MAX_PROMPT_FONT_SIZE,
-        value: settings.fontSizePrompt,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        onChange: (fontSizePrompt) => updateSettings({ fontSizePrompt }),
-      }}
       preview={<PromptFontPreview />}
     />
   );
@@ -1570,7 +1695,7 @@ function PromptFontRow() {
 
 function CodeFontRow({
   title,
-  description = "Code blocks, diffs, and file previews.",
+  description = "Diffs and file previews. Code in the chat follows Chat density.",
   preview,
 }: {
   title?: string;
@@ -1832,7 +1957,8 @@ function FontFamilySettingsRow({
   onValueChange: (value: string) => void;
   onReset: () => void;
   requireMonospace?: boolean;
-  size: {
+  /** The size picker; absent where another setting owns the size. */
+  size?: {
     label: string;
     min: number;
     max: number;
@@ -1896,7 +2022,7 @@ function FontFamilySettingsRow({
     onReset();
   };
   const resetAction =
-    value !== defaultValue || size.value !== size.defaultValue ? (
+    value !== defaultValue || (size !== undefined && size.value !== size.defaultValue) ? (
       <SettingResetButton label={title.toLowerCase()} onClick={resetToDefault} />
     ) : null;
   const fontEnumeration = useFontEnumeration();
@@ -1967,29 +2093,31 @@ function FontFamilySettingsRow({
   const control = (
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
-      <Select
-        value={String(size.value)}
-        onValueChange={(next) => {
-          if (typeof next !== "string") return;
-          const parsed = Number(next);
-          if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
-            size.onChange(parsed);
-          }
-        }}
-      >
-        <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="end" alignItemWithTrigger={false}>
-          {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
-            (px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ),
-          )}
-        </SelectPopup>
-      </Select>
+      {size ? (
+        <Select
+          value={String(size.value)}
+          onValueChange={(next) => {
+            if (typeof next !== "string") return;
+            const parsed = Number(next);
+            if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
+              size.onChange(parsed);
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
+            <SelectValue>{size.value} px</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
+              (px) => (
+                <SelectItem hideIndicator key={px} value={String(px)}>
+                  {px} px
+                </SelectItem>
+              ),
+            )}
+          </SelectPopup>
+        </Select>
+      ) : null}
     </div>
   );
   return (
@@ -2110,7 +2238,7 @@ function LegacyFeaturesSection() {
             />
             <SettingsRow
               {...searchableSetting("legacy-context-window-indicator")}
-              description="Shows context window usage as a circular indicator in the composer."
+              description="Shows context window usage as a pill above the prompt; select it to compact."
               control={
                 <Switch
                   checked={settings.contextWindowMeterEnabled}
@@ -2652,33 +2780,6 @@ export function GeneralSettingsPanel() {
                 updateSettings({ composerRichTextEnabled: Boolean(checked) })
               }
               aria-label="Rich text composer"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("composer-collapse")}
-          description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
-          resetAction={
-            settings.composerCollapseOnScroll !==
-            DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
-              <SettingResetButton
-                label="collapse composer on scroll"
-                onClick={() =>
-                  updateSettings({
-                    composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.composerCollapseOnScroll}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerCollapseOnScroll: Boolean(checked) })
-              }
-              aria-label="Collapse composer on scroll"
             />
           }
         />

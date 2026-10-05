@@ -79,7 +79,7 @@ function TaskSummary({
       <ComposerBanner.Content>
         <span className="shrink-0 text-muted-foreground">Tasks</span>
         <span
-          className="min-w-0 flex-1 truncate text-left font-medium text-foreground/80"
+          className="min-w-0 flex-1 truncate text-left font-medium text-foreground"
           data-composer-task-current="true"
         >
           {progress.step}
@@ -129,9 +129,7 @@ export const ComposerTasksBadge = memo(function ComposerTasksBadge({
   return placement === "inline" ? (
     row
   ) : (
-    <ComposerBanner.Root density="comfortable" data-composer-shoulder-tab>
-      {row}
-    </ComposerBanner.Root>
+    <ComposerBanner.Root data-composer-shoulder-tab>{row}</ComposerBanner.Root>
   );
 });
 
@@ -147,10 +145,7 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
   readonly steps: readonly ComposerTaskStep[];
 }) {
   return (
-    <div
-      data-chat-composer-collapsed-controls="true"
-      data-chat-composer-tasks-drawer={expanded ? "true" : undefined}
-    >
+    <div data-chat-composer-tasks-drawer={expanded ? "true" : undefined}>
       <ComposerTasksBadge
         expanded={expanded}
         onToggle={onToggle}
@@ -169,12 +164,12 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
               <ComposerBanner.Row key={key} render={<li />} className="items-start py-1 pe-2">
                 <ComposerBanner.Icon
                   className={cn(
-                    "h-4",
+                    "h-(--chat-row)",
                     step.status === "completed"
                       ? "text-success"
                       : step.status === "inProgress"
                         ? "text-primary"
-                        : "text-muted-foreground/40",
+                        : "text-icon-muted",
                   )}
                 >
                   {step.status === "completed" ? (
@@ -189,10 +184,10 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
                   className={cn(
                     "block wrap-anywhere",
                     step.status === "completed"
-                      ? "text-muted-foreground/55"
+                      ? "text-muted-foreground"
                       : step.status === "inProgress"
-                        ? "text-foreground/90"
-                        : "text-muted-foreground/70",
+                        ? "text-foreground"
+                        : "text-muted-foreground",
                   )}
                 >
                   <span className="sr-only">{taskStatusLabels[step.status]}: </span>
@@ -200,7 +195,7 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
                 </ComposerBanner.Content>
                 <ComposerBanner.Actions>
                   <span
-                    className="w-12 text-right text-3xs/4 text-muted-foreground/45 tabular-nums"
+                    className="w-12 text-right text-chat-label text-muted-foreground tabular-nums"
                     data-composer-task-duration="true"
                   >
                     {step.durationMs !== undefined

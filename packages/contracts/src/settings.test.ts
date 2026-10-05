@@ -363,6 +363,21 @@ describe("ClientSettings chat width", () => {
   });
 });
 
+describe("ClientSettings chat density", () => {
+  it("defaults existing settings to compact density at 100% text size", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.chatDensity).toBe("compact");
+    expect(settings.chatTextScale).toBe(100);
+  });
+
+  it("rejects a text size outside 85–130% or off the 5% step", () => {
+    expect(() => decodeClientSettings({ chatTextScale: 80 })).toThrow();
+    expect(() => decodeClientSettings({ chatTextScale: 135 })).toThrow();
+    expect(() => decodeClientSettingsPatch({ chatTextScale: 102 })).toThrow();
+    expect(decodeClientSettingsPatch({ chatTextScale: 115 }).chatTextScale).toBe(115);
+  });
+});
+
 describe("ClientSettings load balancing", () => {
   it("requires opt-in when settings are new or omit load balancing", () => {
     expect(decodeClientSettings({}).loadBalancingEnabled).toBe(false);

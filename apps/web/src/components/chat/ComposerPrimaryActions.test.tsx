@@ -20,7 +20,6 @@ import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 function renderPendingActions(isRunning: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
-      compact: true,
       pendingAction: {
         questionIndex: 0,
         isLastQuestion: true,
@@ -47,7 +46,6 @@ function renderPendingActions(isRunning: boolean) {
 function renderRunningActions(hasSendableContent: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
-      compact: true,
       pendingAction: null,
       isRunning: true,
       showPlanFollowUpPrompt: false,
@@ -68,7 +66,6 @@ function renderRunningActions(hasSendableContent: boolean) {
 function renderSendButton(sendDisabledReason: string | null = null) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
-      compact: true,
       pendingAction: null,
       isRunning: false,
       showPlanFollowUpPrompt: false,

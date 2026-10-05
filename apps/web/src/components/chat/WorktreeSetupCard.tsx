@@ -4,24 +4,13 @@ import {
   type WorktreeSetupStage,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CircleAlertIcon,
-  CircleIcon,
-  LaptopIcon,
-  MinusIcon,
-  TerminalIcon,
-  XIcon,
-} from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDownIcon, ChevronRightIcon, LaptopIcon, TerminalIcon, XIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 
-import { Button } from "~/components/ui/button";
-import { Spinner } from "~/components/ui/spinner";
 import { MiddleTruncate } from "../ui/middle-truncate";
-import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { cn } from "~/lib/utils";
+import { type ChatGlyph, ChatGutterRow } from "./ChatGutter";
+import { ChatRowAction } from "./ChatRowAction";
 
 interface WorktreeSetupCardProps {
   snapshot: WorktreeSetupSnapshot;
@@ -55,21 +44,20 @@ function useNowWhile(active: boolean): number {
   return nowMs;
 }
 
-function StageIcon({ status }: { status: WorktreeSetupStage["status"] }) {
-  const className = "size-4 shrink-0 stroke-2";
+/** The stage's gutter glyph: static, so a running stage never repaints. */
+function stageGlyph(status: WorktreeSetupStage["status"]): ChatGlyph {
   switch (status) {
     case "done":
-      return <CheckIcon aria-hidden className={className} />;
-    case "running":
-      return <Spinner size="md" className="shrink-0" />;
-    case "failed":
-      return <XIcon aria-hidden className={className} />;
-    case "warning":
-      return <CircleAlertIcon aria-hidden className={className} />;
     case "skipped":
-      return <MinusIcon aria-hidden className={className} />;
+      return "action";
+    case "running":
+      return "running";
+    case "failed":
+      return "failed";
+    case "warning":
+      return "info";
     case "pending":
-      return <CircleIcon aria-hidden className={className} />;
+      return "queued";
   }
 }
 
@@ -80,26 +68,12 @@ function stageRowClassName(status: WorktreeSetupStage["status"]): string {
     case "warning":
       return "text-warning-foreground";
     case "pending":
-      return "text-secondary-label opacity-40";
+      return "text-muted-foreground";
     case "running":
     case "skipped":
     case "done":
       return "text-secondary-label";
   }
-}
-
-/** Same shimmer treatment as the live tool rows in the timeline. */
-function ShimmerOverlay({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden
-      className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
-    >
-      <span className="live-activity-focus-counter block">
-        <span className="live-activity-focus-aligned block text-foreground">{children}</span>
-      </span>
-    </span>
-  );
 }
 
 function headerLabel(snapshot: WorktreeSetupSnapshot): string {
@@ -118,8 +92,8 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
 }
 
 /**
- * Occupies the same slot, with the same metrics, as the "Working for" header
- * so the handoff to the agent's turn only swaps the text.
+ * The setup's own title row: a gutter glyph and words for the phase, on the
+ * same row metrics as the transcript's work rows.
  */
 function SetupHeaderRow({
   snapshot,
@@ -137,29 +111,22 @@ function SetupHeaderRow({
     ? "text-destructive-foreground"
     : finishedWithFailedStage
       ? "text-warning-foreground"
-      : "text-muted-foreground";
+      : "text-foreground";
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div
-        className={cn(
-          "flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed tabular-nums",
-          tone,
-        )}
-      >
-        <span
-          ref={running ? observeVisibleAnimation : undefined}
-          className="relative min-w-0 shrink overflow-hidden whitespace-nowrap"
-        >
-          <span className="block truncate">{text}</span>
-          {running ? <ShimmerOverlay>{text}</ShimmerOverlay> : null}
-        </span>
+    <ChatGutterRow
+      glyph={running ? "running" : failed || finishedWithFailedStage ? "failed" : "action"}
+      glyphClassName={finishedWithFailedStage ? "text-warning-foreground" : undefined}
+      className="min-h-6 items-center text-chat-meta tabular-nums"
+    >
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className={cn("min-w-0 truncate font-medium", tone)}>{text}</span>
         {totalElapsed !== null ? (
-          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          <span className="ms-auto shrink-0 text-muted-foreground">
             {formatDuration(totalElapsed)}
           </span>
         ) : null}
       </div>
-    </div>
+    </ChatGutterRow>
   );
 }
 
@@ -186,40 +153,28 @@ function StageRow({
           ? `${stage.percent}%`
           : stage.detail;
   return (
-    <div
-      ref={running ? observeVisibleAnimation : undefined}
+    <ChatGutterRow
+      glyph={stageGlyph(stage.status)}
+      glyphClassName={stage.status === "warning" ? "text-warning-foreground" : undefined}
       className={cn(
-        "relative flex min-h-6 min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-0.5 py-0.5 text-sm leading-relaxed",
+        "min-h-(--chat-row) items-center text-chat-meta",
         stageRowClassName(stage.status),
       )}
       data-worktree-setup-stage={stage.id}
       data-worktree-setup-status={stage.status}
     >
-      <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <StageIcon status={stage.status} />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {trailing ? (
-        <span className="min-w-0 truncate text-xs text-muted-foreground tabular-nums">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 shrink-0 truncate">{label}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground tabular-nums">
           {trailing}
         </span>
-      ) : null}
-      {elapsed !== null && stage.status !== "skipped" && stage.status !== "pending" ? (
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {formatDuration(elapsed)}
-        </span>
-      ) : null}
-      {running ? (
-        <ShimmerOverlay>
-          <span className="flex min-h-6 items-center gap-1.5 px-0.5 py-0.5">
-            <span className="flex size-6 shrink-0 items-center justify-center">
-              <StageIcon status={stage.status} />
-            </span>
-            <span className="min-w-0 flex-1 truncate">{label}</span>
+        {elapsed !== null && stage.status !== "skipped" && stage.status !== "pending" ? (
+          <span className="shrink-0 text-muted-foreground tabular-nums">
+            {formatDuration(elapsed)}
           </span>
-        </ShimmerOverlay>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </ChatGutterRow>
   );
 }
 
@@ -238,57 +193,59 @@ function OutputTail({ lines, failed }: { lines: ReadonlyArray<string>; failed: b
     line: lines[lines.length - OUTPUT_TAIL_LINES + slot] ?? "",
   }));
   return (
-    <pre
-      className={cn(
-        "mb-1 ml-8 overflow-hidden rounded-md border px-2.5 py-1.5 font-mono text-2xs leading-relaxed select-text",
-        failed
-          ? "border-destructive/20 bg-error-surface text-destructive-foreground"
-          : "border-border bg-code text-muted-foreground",
-      )}
-    >
-      {rows.map(({ slot, line }) => (
-        <div key={slot} className="truncate whitespace-pre">
-          {line.length === 0 ? "\u00a0" : line}
-        </div>
-      ))}
-    </pre>
+    <ChatGutterRow glyph="result" className="mb-1">
+      <pre
+        className={cn(
+          "overflow-hidden rounded-sm bg-foreground/3.5 px-2 py-0.5 font-mono text-chat-meta select-text",
+          failed ? "text-destructive-foreground" : "text-muted-foreground",
+        )}
+      >
+        {rows.map(({ slot, line }) => (
+          <div key={slot} className="truncate whitespace-pre">
+            {line.length === 0 ? "\u00a0" : line}
+          </div>
+        ))}
+      </pre>
+    </ChatGutterRow>
   );
 }
 
 function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
   return (
-    <dl className="mt-1 mb-1.5 ml-8 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-      {snapshot.branch ? (
-        <>
-          <dt className="text-foreground/80">Branch</dt>
-          <dd className="min-w-0 font-mono">
-            <MiddleTruncate value={snapshot.branch} className="flex" />
-          </dd>
-        </>
-      ) : null}
-      {snapshot.baseRef ? (
-        <>
-          <dt className="text-foreground/80">Base</dt>
-          <dd className="min-w-0 font-mono">
-            <MiddleTruncate value={snapshot.baseRef} className="flex" />
-          </dd>
-        </>
-      ) : null}
-      {snapshot.worktreePath ? (
-        <>
-          <dt className="text-foreground/80">Path</dt>
-          <dd className="min-w-0 font-mono">
-            <MiddleTruncate value={snapshot.worktreePath} className="flex" />
-          </dd>
-        </>
-      ) : null}
-      {snapshot.setupScript ? (
-        <>
-          <dt className="text-foreground/80">Setup</dt>
-          <dd className="truncate font-mono">{snapshot.setupScript.command}</dd>
-        </>
-      ) : null}
-    </dl>
+    <ChatGutterRow glyph={null} className="mt-0.5 mb-1">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-chat-meta text-muted-foreground">
+        {snapshot.branch ? (
+          <>
+            <dt className="text-foreground/80">Branch</dt>
+            <dd className="min-w-0 font-mono">
+              <MiddleTruncate value={snapshot.branch} className="flex" />
+            </dd>
+          </>
+        ) : null}
+        {snapshot.baseRef ? (
+          <>
+            <dt className="text-foreground/80">Base</dt>
+            <dd className="min-w-0 font-mono">
+              <MiddleTruncate value={snapshot.baseRef} className="flex" />
+            </dd>
+          </>
+        ) : null}
+        {snapshot.worktreePath ? (
+          <>
+            <dt className="text-foreground/80">Path</dt>
+            <dd className="min-w-0 font-mono">
+              <MiddleTruncate value={snapshot.worktreePath} className="flex" />
+            </dd>
+          </>
+        ) : null}
+        {snapshot.setupScript ? (
+          <>
+            <dt className="text-foreground/80">Setup</dt>
+            <dd className="truncate font-mono">{snapshot.setupScript.command}</dd>
+          </>
+        ) : null}
+      </dl>
+    </ChatGutterRow>
   );
 }
 
@@ -312,24 +269,21 @@ function CollapsedSummaryRow({
         : "done";
   const label = headerLabel(snapshot);
   return (
-    <div
-      className={cn(
-        "flex min-h-6 min-w-0 items-center gap-1.5 rounded-md px-0.5 py-0.5 text-sm leading-relaxed",
-        stageRowClassName(status),
-      )}
+    <ChatGutterRow
+      glyph={stageGlyph(status)}
+      className={cn("min-h-(--chat-row) items-center text-chat-meta", stageRowClassName(status))}
       data-worktree-setup-stage="summary"
       data-worktree-setup-status={status}
     >
-      <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <StageIcon status={status} />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {totalElapsed !== null ? (
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {formatDuration(totalElapsed)}
-        </span>
-      ) : null}
-    </div>
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {totalElapsed !== null ? (
+          <span className="shrink-0 text-muted-foreground tabular-nums">
+            {formatDuration(totalElapsed)}
+          </span>
+        ) : null}
+      </div>
+    </ChatGutterRow>
   );
 }
 
@@ -341,7 +295,7 @@ export function WorktreeSetupCard({
   embedded = false,
 }: WorktreeSetupCardProps & {
   /**
-   * The agent's turn is live and owns the "Working for" header. The stage
+   * The agent's turn is live and its footer reports the work. The stage
    * list stays exactly where it was so the handoff never moves anything; a
    * failed script that outlives the handoff collapses to a single row.
    */
@@ -376,7 +330,7 @@ export function WorktreeSetupCard({
       {collapsed ? (
         <CollapsedSummaryRow snapshot={snapshot} totalElapsed={totalElapsed} />
       ) : (
-        <div className={showHeader ? "pt-1.5" : undefined}>
+        <div className={showHeader ? "pt-0.5" : undefined}>
           {snapshot.stages.map((stage) => (
             <div key={stage.id}>
               <StageRow
@@ -393,43 +347,43 @@ export function WorktreeSetupCard({
       )}
 
       {snapshot.phase === "failed" && snapshot.error ? (
-        <p className="mt-1 ml-8 text-xs text-muted-foreground">{snapshot.error}</p>
+        <ChatGutterRow glyph={null} className="mt-0.5">
+          <p className="text-chat-meta text-muted-foreground">{snapshot.error}</p>
+        </ChatGutterRow>
       ) : null}
 
       {detailsOpen ? <SetupDetails snapshot={snapshot} /> : null}
 
-      {/* Indented so the first label lines up with the stage labels: the icon
-          column, minus the xs button's own horizontal padding. */}
-      <div className="mt-0.5 ml-[calc(--spacing(6)+2px-(--spacing(2)-1px))] flex flex-wrap items-center gap-0.5">
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost-muted"
-          aria-expanded={detailsOpen}
-          onClick={() => setDetailsOpen((open) => !open)}
-        >
-          {detailsOpen ? <ChevronDownIcon aria-hidden /> : <ChevronRightIcon aria-hidden />}
-          Details
-        </Button>
-        {showTerminal ? (
-          <Button type="button" size="xs" variant="ghost-muted" onClick={onOpenTerminal}>
-            <TerminalIcon aria-hidden />
-            Open terminal
-          </Button>
-        ) : null}
-        {onWorkLocally ? (
-          <Button type="button" size="xs" variant="ghost-muted" onClick={onWorkLocally}>
-            <LaptopIcon aria-hidden />
-            Work locally
-          </Button>
-        ) : null}
-        {onCancel && running ? (
-          <Button type="button" size="xs" variant="ghost-muted" onClick={onCancel}>
-            <XIcon aria-hidden />
-            Cancel
-          </Button>
-        ) : null}
-      </div>
+      <ChatGutterRow glyph={null}>
+        <div className="flex min-h-6 flex-wrap items-center gap-x-3">
+          <ChatRowAction
+            tone="muted"
+            aria-expanded={detailsOpen}
+            onClick={() => setDetailsOpen((open) => !open)}
+          >
+            {detailsOpen ? <ChevronDownIcon aria-hidden /> : <ChevronRightIcon aria-hidden />}
+            Details
+          </ChatRowAction>
+          {showTerminal ? (
+            <ChatRowAction onClick={onOpenTerminal}>
+              <TerminalIcon aria-hidden />
+              Open terminal
+            </ChatRowAction>
+          ) : null}
+          {onWorkLocally ? (
+            <ChatRowAction onClick={onWorkLocally}>
+              <LaptopIcon aria-hidden />
+              Work locally
+            </ChatRowAction>
+          ) : null}
+          {onCancel && running ? (
+            <ChatRowAction tone="muted" onClick={onCancel}>
+              <XIcon aria-hidden />
+              Cancel
+            </ChatRowAction>
+          ) : null}
+        </div>
+      </ChatGutterRow>
     </section>
   );
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ChangedFilesCard, ChangedFilesTree } from "./ChangedFilesTree";
 
 describe("ChangedFilesCard", () => {
-  it("keeps its compact header sticky while preserving singular labels", () => {
+  it("titles the card with a singular count and a Review action", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
         turnId={TurnId.make("turn-1")}
@@ -18,10 +18,10 @@ describe("ChangedFilesCard", () => {
     );
 
     expect(markup).toContain('data-changed-files-state="tree"');
-    expect(markup).toContain('aria-label="Open diff"');
+    expect(markup).toContain(">Review<");
     expect(markup).toContain('role="group" aria-label="2 additions, 1 deletions"');
-    expect(markup).toContain("1 changed file");
-    expect(markup).not.toContain("1 changed files");
+    expect(markup).toContain("1 file changed");
+    expect(markup).not.toContain("1 files changed");
   });
 
   it("shows collapsed folders and root files together", () => {
@@ -70,7 +70,7 @@ describe("ChangedFilesCard", () => {
     );
 
     expect(markup).toContain('data-changed-files-state="tree"');
-    expect(markup).toContain("1 changed file");
+    expect(markup).toContain("1 file changed");
     expect(markup).toContain("apps/web/src");
     expect(markup).not.toContain("Show all");
     expect(markup).not.toContain("App.tsx");
