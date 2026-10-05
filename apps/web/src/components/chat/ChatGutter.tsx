@@ -51,7 +51,7 @@ export function ChatGlyphMark({
   className,
 }: {
   readonly glyph: ChatGlyph;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <span aria-hidden className={cn("select-none", GLYPH_TONES[glyph], className)}>
@@ -74,8 +74,8 @@ export function ChatGutterRow({
   ...props
 }: {
   readonly glyph: ChatGlyph | null;
-  readonly size?: "prose" | "meta";
-  readonly glyphClassName?: string;
+  readonly size?: "prose" | "meta" | undefined;
+  readonly glyphClassName?: string | undefined;
   readonly children: ReactNode;
 } & Omit<ComponentProps<"div">, "children">) {
   return (
@@ -105,7 +105,7 @@ export function ChatRoleLabel({
   className,
 }: {
   readonly children: ReactNode;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <div
