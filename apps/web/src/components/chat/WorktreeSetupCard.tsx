@@ -92,8 +92,8 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
 }
 
 /**
- * Occupies the same slot, with the same metrics, as the "Working for" header
- * so the handoff to the agent's turn only swaps the text.
+ * The setup's own title row: a gutter glyph and words for the phase, on the
+ * same row metrics as the transcript's work rows.
  */
 function SetupHeaderRow({
   snapshot,
@@ -295,7 +295,7 @@ export function WorktreeSetupCard({
   embedded = false,
 }: WorktreeSetupCardProps & {
   /**
-   * The agent's turn is live and owns the "Working for" header. The stage
+   * The agent's turn is live and its footer reports the work. The stage
    * list stays exactly where it was so the handoff never moves anything; a
    * failed script that outlives the handoff collapses to a single row.
    */
