@@ -22,7 +22,7 @@ export function PanelTabCloseButton({
   const button = (
     <button
       type="button"
-      className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+      className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm before:absolute before:-inset-1 before:content-[''] hover:bg-muted"
       aria-label={label}
       tabIndex={tabIndex}
       onClick={onClick}

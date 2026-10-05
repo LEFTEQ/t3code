@@ -155,7 +155,7 @@ function TabLine({
     >
       <status.Icon aria-hidden className={cn("size-2.5 shrink-0", status.className)} />
       <span className={cn("shrink-0 font-medium", status.className)}>{status.label}</span>
-      <span className="min-w-0 truncate opacity-70">{title}</span>
+      <span className="min-w-0 truncate">{title}</span>
     </button>
   );
 }
@@ -335,7 +335,7 @@ function WorkspaceRow({
         <button
           type="button"
           aria-label={`Close ${workspace.name}`}
-          className="absolute top-1 right-1.5 grid size-[1.125rem] cursor-pointer place-items-center rounded-sm text-sidebar-muted-foreground opacity-0 outline-none group-hover/workspace:opacity-100 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-1 right-1.5 grid size-[1.125rem] cursor-pointer place-items-center rounded-sm text-sidebar-muted-foreground opacity-0 outline-none before:absolute before:-inset-[3px] before:content-[''] group-hover/workspace:opacity-100 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => closeWorkspaceWithUndo(workspace.id)}
         >
           <XIcon className="size-3" />
@@ -388,7 +388,7 @@ function SidebarListSwitchRow({
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {count !== undefined ? (
-          <span className="text-xs tabular-nums opacity-70">{count}</span>
+          <span className="text-xs tabular-nums">{count}</span>
         ) : null}
       </button>
     </div>

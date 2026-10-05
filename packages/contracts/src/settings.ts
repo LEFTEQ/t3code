@@ -295,6 +295,22 @@ export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
+/** Token set the chat transcript and composer are sized from, on every chat surface. */
+export const ChatDensity = Schema.Literals(["compact", "comfortable", "ultra"]);
+export type ChatDensity = typeof ChatDensity.Type;
+export const DEFAULT_CHAT_DENSITY: ChatDensity = "compact";
+
+/** Percentage that scales the active chat density's token set as a whole. */
+export const MIN_CHAT_TEXT_SCALE = 85;
+export const MAX_CHAT_TEXT_SCALE = 130;
+export const CHAT_TEXT_SCALE_STEP = 5;
+export const ChatTextScale = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_CHAT_TEXT_SCALE, maximum: MAX_CHAT_TEXT_SCALE }),
+  Schema.isMultipleOf(CHAT_TEXT_SCALE_STEP),
+);
+export type ChatTextScale = typeof ChatTextScale.Type;
+export const DEFAULT_CHAT_TEXT_SCALE: ChatTextScale = 100;
+
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
@@ -304,6 +320,10 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
+  chatDensity: ChatDensity.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_DENSITY))),
+  chatTextScale: ChatTextScale.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_TEXT_SCALE)),
+  ),
   loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   appearanceContrast: AppearanceContrast.pipe(
@@ -1639,6 +1659,8 @@ export const ClientSettingsPatch = Schema.Struct({
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),
+  chatDensity: Schema.optionalKey(ChatDensity),
+  chatTextScale: Schema.optionalKey(ChatTextScale),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),
   appearanceContrast: Schema.optionalKey(AppearanceContrast),
