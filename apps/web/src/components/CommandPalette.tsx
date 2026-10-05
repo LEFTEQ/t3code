@@ -27,6 +27,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  type ChatDensity,
   type DesktopWslState,
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -61,6 +62,7 @@ import {
   PlusIcon,
   RotateCcwIcon,
   Rows2Icon,
+  Rows3Icon,
   SettingsIcon,
   SquarePenIcon,
   SunIcon,
@@ -87,7 +89,18 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { useClientSettings } from "../hooks/useSettings";
+import {
+  getClientSettings,
+  persistClientSettingsPatch,
+  useClientSettings,
+} from "../hooks/useSettings";
+import {
+  CHAT_DENSITY_LABELS,
+  CHAT_DENSITY_ORDER,
+  DEFAULT_CHAT_DENSITY_SETTINGS,
+  cycleChatDensity,
+  stepChatDensity,
+} from "../chatDensity";
 import { useTheme } from "../hooks/useTheme";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
@@ -222,6 +235,16 @@ const APPEARANCE_OPTIONS = [
   { mode: "light", label: "Light", icon: SunIcon },
   { mode: "dark", label: "Dark", icon: MoonIcon },
 ] as const;
+
+/** Applies a density change from the palette or ⌃⌘= / − / 0 and names the result. */
+function setChatDensity(patch: { chatDensity: ChatDensity; chatTextScale?: number }): void {
+  void persistClientSettingsPatch(patch);
+  toastManager.add({
+    id: "chat-density",
+    title: `Chat density: ${CHAT_DENSITY_LABELS[patch.chatDensity]}`,
+    timeout: 1500,
+  });
+}
 
 function notifyThemeSaveFailure(): void {
   toastManager.add(
@@ -563,6 +586,27 @@ export function CommandPalette({ children }: { children: ReactNode }) {
             timeout: 1500,
           });
         }
+        return;
+      }
+      if (
+        command === "chat.density.roomier" ||
+        command === "chat.density.denser" ||
+        command === "chat.density.reset"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        const current = getClientSettings().chatDensity;
+        setChatDensity(
+          command === "chat.density.reset"
+            ? DEFAULT_CHAT_DENSITY_SETTINGS
+            : {
+                chatDensity: stepChatDensity(
+                  current,
+                  command === "chat.density.roomier" ? "roomier" : "denser",
+                ),
+              },
+        );
         return;
       }
       if (command === "theme.select") {
@@ -2162,6 +2206,33 @@ function OpenCommandPaletteDialog(props: {
     ],
   };
   actionItems.push(changeAppearanceItem);
+
+  actionItems.push({
+    kind: "action",
+    value: "action:cycle-chat-density",
+    searchTerms: ["chat density", "compact", "comfortable", "ultra", "dense", "spacing"],
+    title: "Cycle chat density",
+    icon: <Rows3Icon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      setChatDensity({ chatDensity: cycleChatDensity(clientSettings.chatDensity) });
+    },
+  });
+  for (const density of CHAT_DENSITY_ORDER) {
+    actionItems.push({
+      kind: "action",
+      value: `action:chat-density:${density}`,
+      searchTerms: ["chat density", CHAT_DENSITY_LABELS[density], "spacing", "text size"],
+      title: `Chat density: ${CHAT_DENSITY_LABELS[density]}`,
+      icon: <Rows3Icon className={ITEM_ICON_CLASS} />,
+      titleTrailingContent:
+        clientSettings.chatDensity === density ? (
+          <span className="text-xs text-muted-foreground/70">Current</span>
+        ) : undefined,
+      run: async () => {
+        setChatDensity({ chatDensity: density });
+      },
+    });
+  }
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "workspaces") return;

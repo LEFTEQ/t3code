@@ -253,6 +253,29 @@ describe("thread undo shortcut", () => {
   });
 });
 
+describe("chat density shortcuts", () => {
+  it("steps density with ⌃⌘= / ⌃⌘− / ⌃⌘0 on Mac and keeps ⌘⇧A for the access mode", () => {
+    const resolveMac = (overrides: Partial<ShortcutEventLike>) =>
+      resolveShortcutCommand(event(overrides), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+      });
+    assert.equal(resolveMac({ key: "=", ctrlKey: true, metaKey: true }), "chat.density.roomier");
+    assert.equal(resolveMac({ key: "-", ctrlKey: true, metaKey: true }), "chat.density.denser");
+    assert.equal(resolveMac({ key: "0", ctrlKey: true, metaKey: true }), "chat.density.reset");
+    assert.equal(resolveMac({ key: "a", metaKey: true, shiftKey: true }), "composer.mode");
+  });
+
+  it("leaves Control chords to the platform outside macOS", () => {
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "=", ctrlKey: true, metaKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Win32" },
+      ),
+    );
+  });
+});
+
 describe("copy thread reference shortcut", () => {
   it("resolves Cmd+Shift+C on macOS and Ctrl+Shift+C elsewhere", () => {
     assert.equal(

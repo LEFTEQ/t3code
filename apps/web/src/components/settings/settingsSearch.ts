@@ -218,6 +218,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["wide full width column layout messages composer monitor"],
   },
   {
+    id: "chat-density",
+    title: "Chat density",
+    to: "/settings/appearance",
+    searchTerms: ["compact comfortable ultra dense spacing padding panes messages composer"],
+  },
+  {
+    id: "chat-text-size",
+    title: "Text size",
+    to: "/settings/appearance",
+    searchTerms: ["chat font size scale zoom bigger smaller messages prompt"],
+  },
+  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",
@@ -240,7 +252,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "prompt-font",
     title: "Prompt font",
     to: "/settings/appearance",
-    searchTerms: ["typography family size composer input"],
+    searchTerms: ["typography family composer input"],
   },
   {
     id: "code-font",
