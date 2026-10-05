@@ -80,13 +80,13 @@ export function ChatGutterRow({
 } & Omit<ComponentProps<"div">, "children">) {
   return (
     <div
-      className={cn("grid grid-cols-[var(--chat-glyph)_minmax(0,1fr)] gap-x-1", className)}
+      className={cn("grid grid-cols-[var(--chat-content-inset)_minmax(0,1fr)]", className)}
       {...props}
     >
       <span
         aria-hidden
         className={cn(
-          "flex items-center justify-center",
+          "flex w-(--chat-glyph) items-center justify-center",
           size === "prose"
             ? "h-(--chat-text-leading) text-chat"
             : "h-(--chat-meta-leading) text-chat-meta",
@@ -110,7 +110,7 @@ export function ChatRoleLabel({
   return (
     <div
       className={cn(
-        "ps-[calc(var(--chat-glyph)+0.25rem)] text-chat-label font-medium text-muted-foreground",
+        "ps-(--chat-content-inset) text-chat-label font-medium text-muted-foreground",
         className,
       )}
     >

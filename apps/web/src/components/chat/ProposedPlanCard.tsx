@@ -13,12 +13,11 @@ import {
   stripDisplayedPlanMarkdown,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
-import { EllipsisIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, CopyIcon, EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
-import { Badge } from "../ui/badge";
 import {
   Dialog,
   DialogDescription,
@@ -32,6 +31,20 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { projectEnvironment } from "~/state/projects";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { ChatRowAction } from "./ChatRowAction";
+
+/** Numbered items at the left margin, outside code fences: the plan's own steps. */
+function countTopLevelPlanSteps(planMarkdown: string): number {
+  let inFence = false;
+  let count = 0;
+  for (const line of planMarkdown.split(/\r?\n/)) {
+    if (/^\s{0,3}(?:`{3,}|~{3,})/.test(line)) inFence = !inFence;
+    else if (!inFence && /^\d+[.)]\s/.test(line)) count += 1;
+  }
+  return count;
+}
+
+const stepCountLabel = (count: number) => `${count} step${count === 1 ? "" : "s"}`;
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
@@ -66,7 +79,10 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     },
   });
   const savePathInputId = useId();
-  const title = proposedPlanTitle(planMarkdown) ?? "Proposed plan";
+  const headingTitle = proposedPlanTitle(planMarkdown);
+  const hasHeadingTitle = headingTitle !== null;
+  const title = headingTitle ?? "Proposed plan";
+  const stepCount = countTopLevelPlanSteps(planMarkdown);
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
   const displayedPlanMarkdown = stripDisplayedPlanMarkdown(planMarkdown);
@@ -145,33 +161,40 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     })();
   };
 
+  // Hairline-ruled, not a card: a title row, the plan as prose, and the
+  // collapse as a text action. Refine / Implement live in the composer.
   return (
-    <div className="rounded-3xl border border-border/80 bg-card/70 p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="secondary">Plan</Badge>
-          {/* Same heading level as the message author headings in the timeline,
-              so a plan's own headings nest beneath it in the outline. */}
-          <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
-        </div>
-        <Menu>
-          <MenuTrigger
-            render={<Button aria-label="Plan actions" size="icon-xs" variant="outline" />}
-          >
-            <EllipsisIcon aria-hidden="true" className="size-4" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuItem onClick={handleCopyPlan}>
-              {isCopied ? "Copied!" : "Copy to clipboard"}
-            </MenuItem>
-            <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
-            <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
-              Save to workspace
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+    <div className="border-t border-border/70 pt-(--chat-gap)" data-proposed-plan="">
+      <div className="flex min-h-6 min-w-0 items-center gap-2 text-chat-meta">
+        {/* Same heading level as the message author headings in the timeline,
+            so a plan's own headings nest beneath it in the outline. */}
+        <h3 className="min-w-0 truncate font-semibold text-foreground">{title}</h3>
+        <span className="shrink-0 text-muted-foreground">
+          {[hasHeadingTitle ? "Plan" : null, stepCount > 0 ? stepCountLabel(stepCount) : null]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+        <span className="ms-auto flex shrink-0 items-center gap-1">
+          <ChatRowAction tone="muted" onClick={handleCopyPlan}>
+            <CopyIcon aria-hidden />
+            {isCopied ? "Copied" : "Copy"}
+          </ChatRowAction>
+          <Menu>
+            <MenuTrigger
+              render={<Button aria-label="Plan actions" size="icon-xs" variant="ghost-muted" />}
+            >
+              <EllipsisIcon aria-hidden="true" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
+              <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
+                Save to workspace
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </span>
       </div>
-      <div className="mt-4">
+      <div className="mt-(--chat-gap)">
         <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
           {canCollapse && !expanded ? (
             <ChatMarkdown
@@ -180,6 +203,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
+              className="text-chat"
             />
           ) : (
             <ChatMarkdown
@@ -188,23 +212,24 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
+              className="text-chat"
             />
           )}
           {canCollapse && !expanded ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card/95 via-card/80 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-background via-background/80 to-transparent" />
           ) : null}
         </div>
         {canCollapse ? (
-          <div className="mt-4 flex justify-center">
-            <Button
-              size="sm"
-              variant="outline"
-              data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded ? "Collapse plan" : "Expand plan"}
-            </Button>
-          </div>
+          <ChatRowAction
+            tone="accent"
+            className="mt-1"
+            aria-expanded={expanded}
+            data-scroll-anchor-ignore
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "Collapse plan" : "Show full plan"}
+            {expanded ? <ChevronUpIcon aria-hidden /> : <ChevronDownIcon aria-hidden />}
+          </ChatRowAction>
         ) : null}
       </div>
 

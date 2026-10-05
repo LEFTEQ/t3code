@@ -16,7 +16,7 @@ import {
  *
  * Components read the tokens through `text-chat` / `text-chat-meta` /
  * `text-chat-label` and `gap-(--chat-gap)`, `px-(--chat-gutter)`,
- * `h-(--chat-row)`, `w-(--chat-glyph)` and friends.
+ * `h-(--chat-row)`, `w-(--chat-glyph)`, `ps-(--chat-content-inset)` and friends.
  */
 export interface ChatDensityPreset {
   /** Prose size; line height is 1.5× of it. */
@@ -111,6 +111,8 @@ export function chatDensityVariables(
     "--chat-turn-gap": px(preset.turnGap * scale),
     "--chat-gutter": px(preset.gutter * scale),
     "--chat-glyph": px(preset.glyph * scale),
+    // Where content starts after the glyph column: the glyph plus a 4px gap.
+    "--chat-content-inset": px((preset.glyph + 4) * scale),
     "--chat-row": px(preset.row * scale),
   };
 }

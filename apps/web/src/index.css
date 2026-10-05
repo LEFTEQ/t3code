@@ -129,6 +129,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --chat-turn-gap: 16px;
   --chat-gutter: 8px;
   --chat-glyph: 14px;
+  --chat-content-inset: 18px;
   --chat-row: 20px;
   /* Horizontal gutter shared by the page header and the chat column, clear of
      the device's safe area. */
@@ -1406,11 +1407,10 @@ html[data-theme-id] [data-chat-header] [data-slot="separator"] {
 }
 
 /* Chat code blocks join the other code surfaces on the code tokens. The
-   default look keeps its secondary/input tints; themed palettes tint those
-   surfaces with the accent, which fights syntax highlighting. */
+   default look keeps its faint foreground tint; themed palettes tint that
+   with the accent, which fights syntax highlighting. */
 html[data-theme-id] .chat-markdown .chat-markdown-codeblock {
   background-color: var(--code-background);
-  border-color: var(--contrast-border);
   color: var(--code-foreground);
 }
 
@@ -1423,27 +1423,18 @@ html[data-theme-id] .chat-markdown .chat-markdown-codeblock pre {
   background-color: transparent;
 }
 
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock-header {
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock-actions {
+  background-color: var(--code-background);
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
-/* T3 Chat renders inline code and compact chat artifacts with its translucent
-   secondary surface flattened over the light chat canvas. The raw muted and
-   secondary tokens are substantially darker than those visible pixels. */
+/* T3 Chat renders inline code with its translucent secondary surface flattened
+   over the light chat canvas. The raw muted and secondary tokens are
+   substantially darker than those visible pixels. */
 html[data-theme-id="t3-chat"] {
   @variant light {
-    & .chat-markdown :not(pre) > code,
-    & [data-changed-files-state],
-    & [data-changed-files-header] {
-      background-color: var(--message-surface);
-    }
-
-    & .chat-markdown :not(pre) > code,
-    & [data-changed-files-state] {
-      border-color: transparent;
-    }
-
     & .chat-markdown :not(pre) > code {
+      background-color: var(--message-surface);
       color: var(--contrast-message-foreground);
     }
   }
@@ -1928,14 +1919,26 @@ code {
   background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
 }
 
-.chat-markdown .chat-markdown-codeblock-header {
-  color: color-mix(in srgb, var(--contrast-foreground) 72%, transparent);
+/* Fenced code blocks: the same faint tint as a bare pre, radius 4, no frame
+   and no header row (ChatMarkdown floats the language label and actions in
+   the corner). */
+.chat-markdown .chat-markdown-codeblock {
+  position: relative;
+  margin: calc(var(--chat-gap) + 0.25em) 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 3.5%, transparent);
+}
+
+/* The corner label and actions sit over the code on an opaque copy of the
+   block's tint, so a long first line never shows through them. */
+.chat-markdown .chat-markdown-codeblock-actions {
+  background: color-mix(in srgb, var(--foreground) 3.5%, var(--background));
+  color: var(--contrast-muted-foreground);
 }
 
 .chat-markdown .chat-markdown-codeblock pre {
   margin: 0;
-  border: none;
-  border-radius: 0;
+  border-radius: inherit;
   background: transparent;
 }
 

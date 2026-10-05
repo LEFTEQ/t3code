@@ -1006,21 +1006,30 @@ function MarkdownCodeBlock({
     [],
   );
 
+  // No header row: the block is its tint (index.css), and the language label
+  // sits in its top-right corner. Copy, wrap and run join the label while the
+  // pointer is over the block or focus is inside it; on touch they stay shown.
   return (
     <div
-      className="chat-markdown-codeblock my-[0.65rem] overflow-hidden rounded-lg border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
+      className="chat-markdown-codeblock group/codeblock"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
     >
-      <div className="chat-markdown-codeblock-header flex items-center justify-between gap-2 pt-1.5 pr-1.5 pb-0 pl-3 select-none">
-        <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-2xs">
+      <div className="chat-markdown-codeblock-actions absolute top-0.5 right-0.5 z-10 flex max-w-[calc(100%-1rem)] items-center gap-0.5 rounded-sm ps-1.5 select-none">
+        <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-chat-label">
           <MarkdownCodeBlockTitleContent
             fenceTitle={fenceTitle}
             language={language}
             theme={theme}
           />
         </span>
-        <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
+        {/* Collapsed rather than display:none, so Tab still reaches the actions
+            and focusing one opens the toolbar. */}
+        <span
+          className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 group-focus-within/codeblock:w-auto group-focus-within/codeblock:overflow-visible group-focus-within/codeblock:opacity-100 group-hover/codeblock:w-auto group-hover/codeblock:overflow-visible group-hover/codeblock:opacity-100 pointer-coarse:w-auto pointer-coarse:opacity-100"
+          role="toolbar"
+          aria-label="Code block actions"
+        >
           <Tooltip>
             <TooltipTrigger
               render={
