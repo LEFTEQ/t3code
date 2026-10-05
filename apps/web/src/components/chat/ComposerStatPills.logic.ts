@@ -1,5 +1,7 @@
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 
+import { formatContextWindowTokens } from "../../lib/contextWindow";
+
 /**
  * The stat pills float at the transcript's bottom-right above the prompt rule
  * (D12): they cost no layout height and say only what changed. Order is fixed —
@@ -21,7 +23,8 @@ export type ComposerStatPill =
   | {
       readonly kind: "ctx";
       readonly label: string;
-      readonly percent: number;
+      /** Null when the provider reports tokens but no window size: the pill shows the count. */
+      readonly percent: number | null;
       readonly tone: ComposerStatPillTone;
       /** At the limit with compaction available: the pill reads "ctx 98% · Compact". */
       readonly offersCompact: boolean;
@@ -39,8 +42,10 @@ export interface ComposerStatPillsInput {
     readonly usedPercent: number;
     readonly resetsAt: string | null;
   } | null;
-  /** Used share of the context window, 0–100; null hides the pill. */
+  /** Used share of the context window, 0–100; null when the window size is unknown. */
   readonly contextPercent: number | null;
+  /** Tokens in the context window; null (with a null percent) hides the pill. */
+  readonly contextUsedTokens: number | null;
   readonly compactAvailable: boolean;
 }
 
@@ -76,7 +81,17 @@ export function deriveComposerStatPills(input: ComposerStatPillsInput): Composer
       tone: atLimit ? "error" : "warning",
     });
   }
-  if (input.contextPercent !== null && Number.isFinite(input.contextPercent)) {
+  if (input.contextPercent === null || !Number.isFinite(input.contextPercent)) {
+    if (input.contextUsedTokens !== null && Number.isFinite(input.contextUsedTokens)) {
+      pills.push({
+        kind: "ctx",
+        label: `ctx ${formatContextWindowTokens(input.contextUsedTokens)}`,
+        percent: null,
+        tone: "dim",
+        offersCompact: false,
+      });
+    }
+  } else {
     const percent = input.contextPercent;
     const atLimit = percent > CONTEXT_PILL_LIMIT_PERCENT;
     pills.push({

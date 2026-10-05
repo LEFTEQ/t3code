@@ -12,6 +12,7 @@ const idle: ComposerStatPillsInput = {
   queuedCount: 0,
   usageWindow: null,
   contextPercent: 31,
+  contextUsedTokens: 62_000,
   compactAvailable: true,
 };
 
@@ -51,10 +52,21 @@ describe("deriveComposerStatPills", () => {
     expect(tone(98)).toMatchObject({ tone: "error", offersCompact: true, label: "ctx 98%" });
   });
 
+  it("shows the token count when the provider reports no window size", () => {
+    expect(deriveComposerStatPills({ ...idle, contextPercent: null }).at(-1)).toEqual({
+      kind: "ctx",
+      label: "ctx 62k",
+      percent: null,
+      tone: "dim",
+      offersCompact: false,
+    });
+  });
+
   it("says a hit usage limit in words and keeps a quiet window out", () => {
     const hit = deriveComposerStatPills({
       ...idle,
       contextPercent: null,
+      contextUsedTokens: null,
       usageWindow: { label: "Session", usedPercent: 100, resetsAt: "2026-10-05T23:40:00.000Z" },
     });
     expect(hit).toEqual([

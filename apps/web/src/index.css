@@ -131,6 +131,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --chat-glyph: 14px;
   --chat-content-inset: 18px;
   --chat-row: 20px;
+  /* Minimum hit target for dense chat controls. Fixed, so density and text size
+     never shrink it below 24px. */
+  --chat-hit: 24px;
   /* Horizontal gutter shared by the page header and the chat column, clear of
      the device's safe area. */
   --workspace-gutter: 0.75rem;

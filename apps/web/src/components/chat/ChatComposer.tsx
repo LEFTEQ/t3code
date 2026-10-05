@@ -3038,24 +3038,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       setComposerSubmissionError(submission.validationMessage);
       if (!submission.didDispatch) return;
-      // A message sent while an approval waits redirects the agent: the request
-      // is declined and the message reaches the agent at its next boundary.
-      if (
-        activePendingApproval &&
-        !respondingRequestIds.includes(activePendingApproval.requestId) &&
-        (activePendingApproval.options === undefined ||
-          activePendingApproval.options.some((option) => option.decision === "decline"))
-      ) {
-        void onRespondToApproval(activePendingApproval.requestId, "decline");
-      }
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
     },
     [
-      activePendingApproval,
-      onRespondToApproval,
-      respondingRequestIds,
       activeThreadId,
       activePendingProgress,
       attachmentTargetKey,
@@ -3907,8 +3894,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerProject = useProject(composerProjectRef);
   const defaultRuntimeMode = resolveProjectSettings(settings, composerProject?.id ?? null).settings
     .defaultRuntimeMode;
-  // The model's own default for its primary option (reasoning effort), before
-  // any selection: a thread that never changed it carries no effort segment.
+  // The configured default for the primary option (reasoning effort): the
+  // project default's saved value for this instance, else the model's own. A
+  // thread still at that value carries no effort segment.
+  const configuredDefaultOptions =
+    activeProjectDefaultModelSelection?.instanceId === selectedInstanceId
+      ? activeProjectDefaultModelSelection.options
+      : undefined;
   const defaultPromptEffort = useMemo(() => {
     const caps = getProviderModelCapabilities(
       selectedProviderModels,
@@ -3916,12 +3908,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedProvider,
       settings.planModeEnabled,
     );
-    const descriptor = getProviderOptionDescriptors({ caps }).find(
-      (candidate) => candidate.type === "select",
-    );
+    const descriptor = getProviderOptionDescriptors({
+      caps,
+      selections: configuredDefaultOptions,
+    }).find((candidate) => candidate.type === "select");
     const value = getProviderOptionCurrentValue(descriptor);
     return typeof value === "string" ? value : null;
-  }, [selectedModel, selectedProvider, selectedProviderModels, settings.planModeEnabled]);
+  }, [
+    configuredDefaultOptions,
+    selectedModel,
+    selectedProvider,
+    selectedProviderModels,
+    settings.planModeEnabled,
+  ]);
   const metadataSegments = new Set(
     resolveComposerMetadataSegments({
       inPane,

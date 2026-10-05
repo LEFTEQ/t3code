@@ -23,7 +23,7 @@ export function ChatRowAction({
     <button
       type={type}
       className={cn(
-        "relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-chat-meta font-medium whitespace-nowrap underline-offset-2 outline-none before:absolute before:-inset-x-1 before:-inset-y-[3px] before:content-[''] hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 [&_svg]:size-3 [&_svg]:shrink-0",
+        "relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-chat-meta font-medium whitespace-nowrap underline-offset-2 outline-none before:absolute before:-inset-x-1 before:top-1/2 before:h-(--chat-hit) before:-translate-y-1/2 before:content-[''] hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 [&_svg]:size-3 [&_svg]:shrink-0",
         TONES[tone],
         className,
       )}

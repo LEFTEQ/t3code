@@ -54,7 +54,7 @@ function Peek({
       type="button"
       data-slot="composer-banner-peek"
       className={cn(
-        "relative flex h-(--chat-row) w-full cursor-pointer items-center border-t border-border ps-(--chat-content-inset) text-start text-chat-meta text-muted-foreground outline-none after:absolute after:inset-x-0 after:-inset-y-0.5 hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+        "relative flex h-(--chat-row) w-full cursor-pointer items-center border-t border-border ps-(--chat-content-inset) text-start text-chat-meta text-muted-foreground outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-full after:min-h-(--chat-hit) after:-translate-y-1/2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
         className,
       )}
       {...props}

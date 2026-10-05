@@ -7273,9 +7273,9 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   }, [activeProviderStatus?.usageLimits]);
   // The ctx pill is the context meter, so the meter setting hides it.
-  const statPillsContextPercent = settings.contextWindowMeterEnabled
-    ? (activeContextWindow?.usedPercentage ?? null)
-    : null;
+  const statPillsContextWindow = settings.contextWindowMeterEnabled ? activeContextWindow : null;
+  const statPillsContextPercent = statPillsContextWindow?.usedPercentage ?? null;
+  const statPillsContextTokens = statPillsContextWindow?.usedTokens ?? null;
   const composerStatPills = useMemo(
     () =>
       deriveComposerStatPills({
@@ -7284,12 +7284,14 @@ export default function ChatView(props: ChatViewProps) {
         queuedCount: queuedMessages.length,
         usageWindow: statPillsUsageWindow,
         contextPercent: statPillsContextPercent,
+        contextUsedTokens: statPillsContextTokens,
         compactAvailable: !compactDisabled,
       }),
     [
       compactDisabled,
       queuedMessages.length,
       statPillsContextPercent,
+      statPillsContextTokens,
       statPillsNeedYou,
       statPillsUsageWindow,
       statPillsWorkingSince,
@@ -7773,6 +7775,7 @@ export default function ChatView(props: ChatViewProps) {
         queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
         createdAt: new Date().toISOString(),
       });
+      declinePendingApprovalForRedirect();
       promptRef.current = "";
       // Attachments move with the message; their uploads stay pending. The
       // refs clear now too, so a Stop before the composer's sync effect runs
@@ -8526,6 +8529,7 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        declinePendingApprovalForRedirect();
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.
@@ -8721,6 +8725,21 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeThreadId, environmentId, respondToThreadApproval, setThreadError],
   );
+
+  // A message that leaves the composer while an approval waits redirects the
+  // agent: the request is declined and the message reaches it at its next
+  // boundary. Called only once the message was queued or its turn started, so
+  // a local command or a refused send leaves the approval alone.
+  const declinePendingApprovalForRedirect = () => {
+    if (
+      activePendingApproval &&
+      !respondingRequestIds.includes(activePendingApproval.requestId) &&
+      (activePendingApproval.options === undefined ||
+        activePendingApproval.options.some((option) => option.decision === "decline"))
+    ) {
+      void onRespondToApproval(activePendingApproval.requestId, "decline");
+    }
+  };
 
   const onRespondToUserInput = useCallback(
     async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
@@ -10264,10 +10283,7 @@ export default function ChatView(props: ChatViewProps) {
                           </div>
                         </div>
                       </ComposerSurface.Shell>
-                      <div
-                        aria-hidden
-                        className="h-[env(safe-area-inset-bottom)]"
-                      />
+                      <div aria-hidden className="h-[env(safe-area-inset-bottom)]" />
                     </div>
                   </div>
                 </div>
