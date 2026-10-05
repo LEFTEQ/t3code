@@ -114,11 +114,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
   };
 
   return (
-    <ComposerBanner.Attachment
-      className={className}
-      data-composer-banner-drawer="true"
-      data-chat-composer-collapsed-controls="true"
-    >
+    <ComposerBanner.Attachment className={className} data-composer-banner-drawer="true">
       <div className={cn("relative flex flex-col-reverse", hasStack && stackExpanded && "z-50")}>
         <div
           key={frontItem.id}

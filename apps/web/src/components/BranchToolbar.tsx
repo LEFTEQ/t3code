@@ -64,10 +64,6 @@ interface BranchToolbarProps {
   onComposerFocusRequest?: () => void;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
-  /** No longer used: the composer has no resting strip to host its controls. */
-  composerControlsHostRef?: (element: HTMLDivElement | null) => void;
-  /** No longer used: the toolbar renders into the composer's metadata line. */
-  contextStripVisible?: boolean;
 }
 
 interface RunContextSelectorProps {

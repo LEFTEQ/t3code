@@ -145,10 +145,7 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
   readonly steps: readonly ComposerTaskStep[];
 }) {
   return (
-    <div
-      data-chat-composer-collapsed-controls="true"
-      data-chat-composer-tasks-drawer={expanded ? "true" : undefined}
-    >
+    <div data-chat-composer-tasks-drawer={expanded ? "true" : undefined}>
       <ComposerTasksBadge
         expanded={expanded}
         onToggle={onToggle}

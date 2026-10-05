@@ -32,12 +32,25 @@ also send files to T3 Code through another app's system share sheet.
 
 See [images and videos](#images-and-videos-in-messages) for previewing and saving media.
 
+## Composer controls
+
+On web and desktop, the line under the prompt names only what differs from your defaults: Plan
+mode, an access mode other than the project's default, a non-default effort, another host, or a
+worktree. Select a word to change it. Every other control, including the model, branch, and
+workspace, is in the **⋯** menu, and its keyboard shortcut still works. Outside a workspace pane,
+the line also shows the model and branch, since no tab shows them.
+
+When the agent asks to run a command or asks a question, the request docks above the prompt.
+Choose **Allow once**, **Allow for session**, or **Deny**. Sending a message instead declines the
+command and tells the agent what to do. For a question, press 1–9 to pick an option or type your
+own answer in the prompt.
+
 ## Send while the agent is working
 
 On web and desktop, a message sent during a running turn waits at the end of the conversation as a
-dashed bubble. It goes out on its own when the agent finishes its next tool
-call, or when the turn ends, even while you have another thread open. Use the arrow under the bubble to send it right
-away, or the X to move it back into the composer. Stop returns every queued
+dim **Queued** line. It goes out on its own when the agent finishes its next tool
+call, or when the turn ends, even while you have another thread open. Use **Send now** to send it right
+away, or the × to move it back into the composer. Stop returns every queued
 message to the composer.
 
 In **Settings → General → Follow-up behavior**, choose **Queue** to keep this
@@ -156,7 +169,8 @@ Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 
 Send `/compact` in an existing conversation to reduce context usage when the
-provider supports it. Web and desktop also offer compaction from the context meter.
+provider supports it. Web and desktop also offer compaction from the context pill above the prompt, shown when
+**Settings → General → Context window indicator** is on.
 
 ## Context in your message
 

@@ -15,15 +15,8 @@ const ComposerMetadataSlotContext = createContext<ComposerMetadataSlot | null>(n
  * transcript's end), and it lets the composer's metadata line publish itself
  * so the branch toolbar, mounted beside the composer by the chat view, can
  * portal its workspace segments into that one line.
- *
- * `contextStrip` is accepted for the chat view's existing call and has no
- * effect: the strip under the composer is gone.
  */
-function Shell({
-  contextStrip: _contextStrip,
-  className,
-  ...props
-}: ComponentProps<"div"> & { contextStrip?: boolean }) {
+function Shell({ className, ...props }: ComponentProps<"div">) {
   const [element, attach] = useState<HTMLElement | null>(null);
   const slot = useMemo(() => ({ element, attach }), [element]);
   return (
