@@ -12,7 +12,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
   extraFlavors,
-  size = "xs",
+  size = "icon-xs",
   variant = "outline",
   className,
 }: {

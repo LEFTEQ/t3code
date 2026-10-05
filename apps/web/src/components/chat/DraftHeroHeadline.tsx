@@ -56,6 +56,9 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const draftBranch = useComposerDraftStore((store) =>
+    draftId ? (store.getDraftSession(draftId)?.branch ?? null) : null,
+  );
 
   const environmentLabelById = useMemo(
     () =>
@@ -225,34 +228,54 @@ export function DraftHeroHeadline({
     <button
       type="button"
       onClick={openAddProject}
-      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground transition-colors hover:border-muted-foreground/60 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       {activeProjectTitle ?? "Add a project"}
     </button>
   );
 
-  // The composer hero is a sentence, so the heading's accessible name must be
-  // a complete sentence too. The project picker is a control rendered inline
-  // in the h1; without an explicit label its widget state bleeds into the
-  // announced phrase.
+  // The context line is a sentence, so its accessible name must be one too.
+  // The project picker is a control rendered inline in the h1; without an
+  // explicit label its widget state bleeds into the announced phrase.
   const headingLabel = hasResolvedProject
-    ? `What should we build in ${activeProjectDisplayName}?`
+    ? `New thread in ${activeProjectDisplayName}${draftBranch ? ` on ${draftBranch}` : ""}`
     : canChooseProject
-      ? `${activeProjectDisplayName ?? "Choose a project"} to start`
+      ? `New thread: ${activeProjectDisplayName ?? "choose a project"} to start`
       : "Add a project to start";
 
   return (
-    <h1
-      aria-label={headingLabel}
-      className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
-    >
-      {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
-      ) : canChooseProject ? (
-        <>{projectSelector} to start</>
-      ) : (
-        <>Add a project to start</>
-      )}
-    </h1>
+    <div className="mx-auto w-full max-w-(--chat-max-width) px-(--chat-gutter)">
+      <div className="ps-(--chat-content-inset)">
+        <h1 aria-label={headingLabel} className="text-chat font-normal text-muted-foreground">
+          {hasResolvedProject ? (
+            <>
+              <span className="text-foreground">New thread in </span>
+              {projectSelector}
+              {draftBranch ? (
+                <>
+                  <span aria-hidden> · </span>
+                  <span className="font-mono text-chat-meta">{draftBranch}</span>
+                </>
+              ) : null}
+            </>
+          ) : canChooseProject ? (
+            <>{projectSelector} to start</>
+          ) : (
+            <>{projectSelector}</>
+          )}
+        </h1>
+        <p className="flex flex-wrap gap-x-3 text-chat-meta text-muted-foreground">
+          <span>
+            <kbd className="font-sans text-secondary-label">/</kbd> commands
+          </span>
+          <span>
+            <kbd className="font-sans text-secondary-label">@</kbd> files
+          </span>
+          <span>
+            <kbd className="font-sans text-secondary-label">$</kbd> skills
+          </span>
+        </p>
+      </div>
+    </div>
   );
 }

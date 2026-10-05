@@ -1,4 +1,3 @@
-import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
 import {
@@ -13,12 +12,12 @@ import {
 } from "./timelineMinimapItems";
 import {
   COMPOSER_CONTEXT_KINDS,
+  PROVIDER_DISPLAY_NAMES,
   type AssistantCitation,
   type EnvironmentId,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
-  type ToolActivityIcon,
   type TurnId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
@@ -26,7 +25,6 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
-  resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
   summarizeToolGroup,
@@ -53,10 +51,7 @@ const NOOP_QUEUED_MESSAGE_ACTION = (_id: string) => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
-import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   createContext,
   memo,
@@ -105,31 +100,17 @@ import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Root, RootContent } from "mdast";
-import { T3Wordmark } from "../T3Wordmark";
 import {
-  BotIcon,
-  BrainIcon,
-  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronUpIcon,
-  CircleAlertIcon,
   DownloadIcon,
-  EyeIcon,
-  GlobeIcon,
-  HammerIcon,
   MessageCircleIcon,
   Minimize2Icon,
   MousePointerClickIcon,
   PaintbrushIcon,
-  SearchIcon,
-  SmartphoneIcon,
-  SquarePenIcon,
-  TerminalIcon,
   Undo2Icon,
-  WrenchIcon,
   XIcon,
-  ZapIcon,
 } from "lucide-react";
 import type {
   ComposerContextId,
@@ -177,7 +158,10 @@ import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssis
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRowsWithState,
+  deriveResponseStartRowIds,
   deriveUnsettledTurnId,
+  describeTurnFooterLead,
+  type TurnFooterModel,
   type MessagesTimelineRowsProjection,
   liveWorkEntryLabel,
   workEntryIsActiveTurnActivity,
@@ -194,7 +178,6 @@ import {
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
-  toolGroupAction,
   workEntryDisplayLabel,
   workEntryIsVisibleInGroup,
   worktreeSetupAgentStarted,
@@ -205,6 +188,8 @@ import {
   type WorkGroupScrollAnchor,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
+import { ChatGutterRow, ChatRoleLabel, type ChatGlyph } from "./ChatGutter";
+import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -257,7 +242,6 @@ import {
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { ComputerUseAppIcon } from "~/components/Icons";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -319,6 +303,9 @@ interface TimelineRowActivityState {
 }
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
+/** Rows that open an agent response and carry its speaker label. Its own context, so a
+ *  new row only re-renders the rows that read it, never the shared callbacks. */
+const TimelineResponseStartCtx = createContext<ReadonlySet<string>>(new Set());
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 
 interface WorkGroupViewState {
@@ -330,7 +317,7 @@ const WorkGroupViewCtx = createContext<{
   state: WorkGroupViewState;
   onToggleEntry: (collapsed: boolean) => void;
 } | null>(null);
-const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
+const TIMELINE_LIST_HEADER = <div className="h-(--chat-turn-gap)" />;
 const TIMELINE_LIST_FADE_HEADER = (
   <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
 );
@@ -347,13 +334,13 @@ function TimelineLoadEarlierHeader({
   fade: boolean;
 }) {
   return (
-    <div className={fade ? "pt-(--workspace-titlebar-scroll-fade-height)" : "pt-3 sm:pt-4"}>
+    <div className={fade ? "pt-(--workspace-titlebar-scroll-fade-height)" : "pt-(--chat-turn-gap)"}>
       <div className="mx-auto w-full max-w-(--chat-max-width) pb-2">
         <button
           type="button"
           onClick={onLoadEarlier}
           disabled={loading}
-          className="w-full py-1.5 text-xs text-muted-foreground/60 hover:text-foreground disabled:cursor-default"
+          className="w-full py-1.5 text-chat-meta text-muted-foreground hover:text-foreground disabled:cursor-default"
         >
           {loading ? "Loading earlier turns…" : "Load earlier turns"}
         </button>
@@ -365,7 +352,7 @@ function TimelineListFooter({ composerInset }: { readonly composerInset: number 
   return (
     <div aria-hidden>
       <div style={{ height: composerInset }} />
-      <div className="h-3 sm:h-4" />
+      <div className="h-(--chat-turn-gap)" />
     </div>
   );
 }
@@ -810,6 +797,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     queuedMessages,
   ]);
   const rows = useStableRows(rawRows, listIdentityKey);
+  // Keyed on the ids so a streaming chunk that keeps the row structure keeps the set.
+  const responseStartKey = useMemo(() => [...deriveResponseStartRowIds(rows)].join("\n"), [rows]);
+  const responseStartRowIds = useMemo(
+    () => new Set(responseStartKey.length > 0 ? responseStartKey.split("\n") : []),
+    [responseStartKey],
+  );
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const restoreRowIndex =
     restoringThreadPosition && rememberedPosition?.atEnd === false
@@ -1269,97 +1262,99 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-placeholder text-sm">Send a message to start the conversation.</p>
+        <p className="text-placeholder text-chat">Send a message to start the conversation.</p>
       </div>
     );
   }
 
   return (
     <TimelineRowCtx value={sharedState}>
-      <TimelineRowActivityCtx value={activityState}>
-        <div
-          ref={setTimelineViewportElement}
-          className="relative h-full min-h-0"
-          data-assistant-citation-viewport="true"
-        >
-          {onCiteAssistantText && citationThreadRef ? (
-            <AssistantSelectionToolbar
-              viewport={timelineViewportElement}
-              threadRef={citationThreadRef}
-              onCite={onCiteAssistantText}
+      <TimelineResponseStartCtx value={responseStartRowIds}>
+        <TimelineRowActivityCtx value={activityState}>
+          <div
+            ref={setTimelineViewportElement}
+            className="relative h-full min-h-0"
+            data-assistant-citation-viewport="true"
+          >
+            {onCiteAssistantText && citationThreadRef ? (
+              <AssistantSelectionToolbar
+                viewport={timelineViewportElement}
+                threadRef={citationThreadRef}
+                onCite={onCiteAssistantText}
+              />
+            ) : null}
+            <LegendList<MessagesTimelineRow>
+              ref={listRef}
+              data={rows}
+              extraData={`${listIdentityKey}:${rows.length}`}
+              keyExtractor={keyExtractor}
+              getItemType={getItemType}
+              renderItem={renderItem}
+              estimatedItemSize={90}
+              initialScrollAtEnd={citationRequest === null && rememberedPosition?.atEnd !== false}
+              // Legend needs a data refresh to mount new pins without a scroll event.
+              dataVersion={readyCitationRequest?.key ?? listIdentityKey}
+              {...(alwaysRender ? { alwaysRender } : {})}
+              onLoad={onCitationListLoad}
+              {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+              contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
+              maintainScrollAtEnd={
+                citationPositioning ||
+                (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+                anchoredEndSpace ||
+                !liveFollowEnabled ||
+                disclosureToggleSettling
+                  ? false
+                  : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                    ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                    : TIMELINE_MAINTAIN_SCROLL_AT_END
+              }
+              maintainVisibleContentPosition={
+                citationPositioning ||
+                (restoringThreadPosition && rememberedPosition?.atEnd === false)
+                  ? false
+                  : maintainVisibleContentPosition
+              }
+              maintainScrollAtEndThreshold={1}
+              onScroll={handleScroll}
+              onItemSizeChanged={reportContentOverflow}
+              className={cn(
+                "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-(--chat-gutter) [overflow-anchor:none]",
+                topFadeEnabled && "topbar-scroll-fade",
+              )}
+              ListHeaderComponent={
+                loadEarlier !== null ? (
+                  <TimelineLoadEarlierHeader
+                    loading={loadEarlier.loading}
+                    onLoadEarlier={loadEarlier.onLoadEarlier}
+                    fade={topFadeEnabled}
+                  />
+                ) : topFadeEnabled ? (
+                  TIMELINE_LIST_FADE_HEADER
+                ) : (
+                  TIMELINE_LIST_HEADER
+                )
+              }
+              ListFooterComponent={timelineListFooter}
             />
-          ) : null}
-          <LegendList<MessagesTimelineRow>
-            ref={listRef}
-            data={rows}
-            extraData={`${listIdentityKey}:${rows.length}`}
-            keyExtractor={keyExtractor}
-            getItemType={getItemType}
-            renderItem={renderItem}
-            estimatedItemSize={90}
-            initialScrollAtEnd={citationRequest === null && rememberedPosition?.atEnd !== false}
-            // Legend needs a data refresh to mount new pins without a scroll event.
-            dataVersion={readyCitationRequest?.key ?? listIdentityKey}
-            {...(alwaysRender ? { alwaysRender } : {})}
-            onLoad={onCitationListLoad}
-            {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-            contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
-            maintainScrollAtEnd={
-              citationPositioning ||
-              (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-              anchoredEndSpace ||
-              !liveFollowEnabled ||
-              disclosureToggleSettling
-                ? false
-                : isWorking && !prefersReducedMotion && settlingListIdentity === null
-                  ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                  : TIMELINE_MAINTAIN_SCROLL_AT_END
-            }
-            maintainVisibleContentPosition={
-              citationPositioning ||
-              (restoringThreadPosition && rememberedPosition?.atEnd === false)
-                ? false
-                : maintainVisibleContentPosition
-            }
-            maintainScrollAtEndThreshold={1}
-            onScroll={handleScroll}
-            onItemSizeChanged={reportContentOverflow}
-            className={cn(
-              "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",
-              topFadeEnabled && "topbar-scroll-fade",
-            )}
-            ListHeaderComponent={
-              loadEarlier !== null ? (
-                <TimelineLoadEarlierHeader
-                  loading={loadEarlier.loading}
-                  onLoadEarlier={loadEarlier.onLoadEarlier}
-                  fade={topFadeEnabled}
-                />
-              ) : topFadeEnabled ? (
-                TIMELINE_LIST_FADE_HEADER
-              ) : (
-                TIMELINE_LIST_HEADER
-              )
-            }
-            ListFooterComponent={timelineListFooter}
-          />
-          <TimelineMinimap
-            items={minimapItems}
-            hasPersistentGutter={minimapHasPersistentGutter}
-            hitStripWidth={minimapHitStripWidth}
-            currentIndex={minimapCurrentIndex}
-            stripMap={minimapStripMap}
-            onSelect={(item) => {
-              onManualNavigation();
-              void listRef.current?.scrollToIndex({
-                index: item.rowIndex,
-                animated: true,
-                viewOffset: 24,
-              });
-            }}
-          />
-        </div>
-      </TimelineRowActivityCtx>
+            <TimelineMinimap
+              items={minimapItems}
+              hasPersistentGutter={minimapHasPersistentGutter}
+              hitStripWidth={minimapHitStripWidth}
+              currentIndex={minimapCurrentIndex}
+              stripMap={minimapStripMap}
+              onSelect={(item) => {
+                onManualNavigation();
+                void listRef.current?.scrollToIndex({
+                  index: item.rowIndex,
+                  animated: true,
+                  viewOffset: 24,
+                });
+              }}
+            />
+          </div>
+        </TimelineRowActivityCtx>
+      </TimelineResponseStartCtx>
     </TimelineRowCtx>
   );
 });
@@ -1679,34 +1674,31 @@ function TimelineMinimapNavigationButton({
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
+/**
+ * One transcript row in the Document grammar. Rows inside a turn sit a
+ * `--chat-gap` apart; a user message and every turn footer (the settled
+ * answer's, the meta row's, the live `working` row) close with `--chat-turn-gap`.
+ */
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
-  const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isExpandedToolGroupHeader =
     (row.kind === "work-toggle" && row.expanded) || (row.kind === "work-live" && row.expanded);
+  const closesTurn =
+    (row.kind === "message" &&
+      (row.message.role === "user" ||
+        (row.message.role === "assistant" && row.showAssistantMeta))) ||
+    row.kind === "assistant-meta" ||
+    row.kind === "working" ||
+    (row.kind === "turn-fold" && row.turnFooter != null);
+  const opensResponse = use(TimelineResponseStartCtx).has(row.id);
 
   return (
     <div
       className={cn(
-        // Commentary (non-terminal assistant) rows carry no metadata row, so
-        // they sit closer to the work that follows them.
-        isExpandedToolGroup
-          ? "pb-1"
-          : isExpandedToolGroupHeader
-            ? "pb-0"
-            : row.kind === "turn-fold" || row.kind === "working"
-              ? "pb-1.5"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  (row.kind === "message" && row.message.role === "reasoning") ||
-                  row.kind === "work" ||
-                  row.kind === "work-live" ||
-                  row.kind === "work-toggle" ||
-                  row.kind === "activity-group" ||
-                  row.kind === "thinking" ||
-                  row.kind === "worktree-setup"
-                ? "pb-2"
-                : "pb-4 @max-[45rem]/pane:pb-2.5",
+        isExpandedToolGroupHeader
+          ? "pb-0.5"
+          : closesTurn
+            ? "pb-(--chat-turn-gap)"
+            : "pb-(--chat-gap)",
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -1719,6 +1711,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       }
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
+      {opensResponse ? <ResponseLabel /> : null}
       {row.kind === "work" ? (
         <WorkGroupSection
           anchorKey={row.id}
@@ -1774,7 +1767,7 @@ function WorktreeSetupTimelineRow({
   );
 }
 
-/** A message waiting for the running turn: a dashed user bubble with icon actions inside it. */
+/** A message waiting for the running turn: one dim gutter line with Send now and cancel. */
 function QueuedMessageTimelineRow({
   row,
 }: {
@@ -1787,7 +1780,18 @@ function QueuedMessageTimelineRow({
     queuedMessage.terminalContexts.length +
     queuedMessage.previewAnnotations.length +
     queuedMessage.reviewComments.length;
-  const text = queuedMessage.prompt.trim();
+  const text = replaceComposerContextReferences(
+    queuedMessage.prompt.trim(),
+    (reference) => reference.label,
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const extras = [
+    attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : null,
+    contextCount > 0 ? `${contextCount} context item${contextCount === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
   const sending = queuedMessage.sending !== undefined;
   const statusLabel = sending
     ? "Sending to the agent"
@@ -1797,83 +1801,61 @@ function QueuedMessageTimelineRow({
         ? "Sends after the next tool call or when the turn ends"
         : "Sends after the messages above it";
   return (
-    <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
-      <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80 @max-[45rem]/pane:max-w-[92%] @max-[45rem]/pane:p-2.5">
-        {text.length > 0 ? (
-          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
-        ) : null}
-        {attachmentCount > 0 || contextCount > 0 ? (
-          <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
-            {[
-              attachmentCount > 0
-                ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`
-                : null,
-              contextCount > 0
-                ? `${contextCount} context item${contextCount === 1 ? "" : "s"}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(", ")}
-          </div>
-        ) : null}
+    <ChatGutterRow glyph="queued" data-queued-message-id={queuedMessage.id}>
+      <div className="flex min-h-(--chat-row) min-w-0 items-center gap-2 text-chat-meta">
+        <Tooltip>
+          <TooltipTrigger
+            render={<span className="shrink-0 font-medium text-muted-foreground" />}
+            aria-label={`${sending ? "Sending" : "Queued"}. ${statusLabel}.`}
+          >
+            {sending ? "Sending" : "Queued"}
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
+        </Tooltip>
+        <span className="min-w-0 flex-1 truncate text-chat text-secondary-label">
+          {text}
+          {extras ? (
+            <span className="text-muted-foreground">{text ? ` · ${extras}` : extras}</span>
+          ) : null}
+        </span>
         <div
-          className="mt-2 flex items-center gap-4 text-secondary-label text-xs"
+          className={cn("flex shrink-0 items-center gap-0.5", sending && "invisible")}
           data-scroll-anchor-ignore
         >
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => ctx.onSteerQueuedMessage(queuedMessage.id)}
+          >
+            Send now
+            {row.isNext && ctx.steerQueuedMessageShortcutLabel ? (
+              <kbd className="font-sans text-muted-foreground">
+                {ctx.steerQueuedMessageShortcutLabel}
+              </kbd>
+            ) : null}
+          </Button>
           <Tooltip>
             <TooltipTrigger
-              render={<span className="inline-flex h-6 items-center gap-1" />}
-              aria-label={`${sending ? "Sending" : "Queued"}. ${statusLabel}.`}
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => ctx.onRemoveQueuedMessage(queuedMessage.id)}
+                  aria-label="Cancel and return to the composer"
+                />
+              }
             >
-              <ClockIcon className="size-3.5" aria-hidden />
-              {sending ? "Sending" : "Queued"}
+              <XIcon aria-hidden />
             </TooltipTrigger>
-            <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
+            <TooltipPopup side="bottom">Cancel and return to the composer</TooltipPopup>
           </Tooltip>
-          <div className={cn("ml-auto flex items-center gap-0.5", sending && "invisible")}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => ctx.onSteerQueuedMessage(queuedMessage.id)}
-                    aria-label="Send now"
-                  />
-                }
-              >
-                <ArrowUpIcon className="size-3.5" aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom">
-                Send now
-                {row.isNext && ctx.steerQueuedMessageShortcutLabel
-                  ? ` (${ctx.steerQueuedMessageShortcutLabel})`
-                  : null}
-              </TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => ctx.onRemoveQueuedMessage(queuedMessage.id)}
-                    aria-label="Cancel and return to the composer"
-                  />
-                }
-              >
-                <XIcon className="size-3.5" aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom">Cancel and return to the composer</TooltipPopup>
-            </Tooltip>
-          </div>
         </div>
       </div>
-    </div>
+    </ChatGutterRow>
   );
 }
 
@@ -1886,7 +1868,7 @@ function ContextCompactionTimelineRow({
     <div
       role="separator"
       aria-label={row.label}
-      className="mx-auto flex w-full max-w-(--chat-max-width) items-center gap-3 py-1 text-muted-foreground text-xs"
+      className="flex w-full items-center gap-3 text-chat-meta text-muted-foreground"
     >
       <span className="h-px flex-1 bg-border/70" />
       <span className="flex shrink-0 items-center gap-1.5">
@@ -1947,8 +1929,26 @@ function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
 // from selection so sighted users and copied text are unaffected.
 const MESSAGE_HEADING_LEVEL = 3;
 
-function MessageAuthorHeading({ children }: { children: string }) {
-  return <h3 className="sr-only select-none">{children}</h3>;
+/** The agent's speaker label at the start of each response, from the thread's provider. */
+function ResponseLabel() {
+  const ctx = use(TimelineRowCtx);
+  const thread = useThread(ctx.threadRef);
+  const serverConfig = useAtomValue(
+    serverEnvironment.configValueAtom(ctx.activeThreadEnvironmentId),
+  );
+  const instanceId = thread?.session?.providerInstanceId ?? thread?.modelSelection.instanceId;
+  const driver = serverConfig?.providers.find(
+    (provider) => provider.instanceId === instanceId,
+  )?.driver;
+  return (
+    <ChatRoleLabel className="pb-0.5">
+      <h3>
+        {driver
+          ? (PROVIDER_DISPLAY_NAMES[driver] ?? formatProviderDriverKindLabel(driver))
+          : "Agent"}
+      </h3>
+    </ChatRoleLabel>
+  );
 }
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
@@ -2108,19 +2108,65 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 
   return (
-    <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground @max-[45rem]/pane:max-w-[92%] @max-[45rem]/pane:p-2.5">
-        <MessageAuthorHeading>You</MessageAuthorHeading>
+    <div className="group/user relative">
+      <ChatRoleLabel>
+        <h3>You</h3>
+      </ChatRoleLabel>
+      <div
+        className="absolute -top-1 end-0 flex items-center gap-1 bg-background ps-1 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/user:opacity-100"
+        data-scroll-anchor-ignore
+      >
+        <Tooltip>
+          <TooltipTrigger
+            render={<p className="text-chat-meta text-muted-foreground tabular-nums" />}
+          >
+            {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+          </TooltipTrigger>
+          <TooltipPopup>
+            {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+          </TooltipPopup>
+        </Tooltip>
+        {typeof revertTurnCount === "number" && (
+          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+        )}
+        {resolvedContext.text && (
+          <MessageCopyButton
+            // Structured paste needs the canonical links to retain their positions.
+            text={
+              contextClipboardFragment
+                ? resolvedContext.text
+                : replaceComposerContextReferences(
+                    resolvedContext.text,
+                    (reference) => reference.label,
+                  )
+            }
+            {...(contextClipboardFragment
+              ? {
+                  extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                }
+              : {})}
+            variant="ghost"
+          />
+        )}
+      </div>
+      <ChatGutterRow glyph="you" size="prose">
+        <div onCopyCapture={onBodyCopyCapture}>
+          <CollapsibleUserMessageBody
+            text={resolvedContext.text}
+            renderContextReference={renderContextReference}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        </div>
         {(regularImages.length > 0 || userVideos.length > 0) && (
-          <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
+          <div className="mt-(--chat-gap) grid max-w-[210px] grid-cols-2 gap-1.5">
             {regularImages.map((image) => (
               <div
                 key={image.id}
                 className={cn(
-                  "bg-background/70",
                   image.source?.kind === "snap-shot" && image.previewUrl
                     ? cn(SNAP_SHOT_ATTACHMENT_FRAME_CLASS, "col-span-2")
-                    : "aspect-[4/3] overflow-hidden rounded-lg border border-border/80",
+                    : "aspect-[4/3] overflow-hidden rounded-sm border border-border/60",
                 )}
               >
                 {image.previewUrl ? (
@@ -2156,25 +2202,27 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </div>
         )}
         {unchippedFiles.length > 0 || unknownAttachments.length > 0 ? (
-          <div className="mb-2 flex flex-col gap-1">
+          <div className="mt-(--chat-gap) flex flex-wrap items-center gap-x-3 gap-y-0.5 text-chat-meta">
             {unchippedFiles.map((file) => {
               const fileIdentity = (
                 <>
                   <PierreEntryIcon pathValue={file.name} kind="file" theme={ctx.resolvedTheme} />
-                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                  <span className="min-w-0 truncate">{file.name}</span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                    {formatAttachmentSize(file.sizeBytes)}
+                  </span>
                 </>
               );
               if (file.downloadable !== false) {
                 return (
-                  <div key={file.id} className="flex min-w-0 items-center gap-1">
+                  <div key={file.id} className="flex min-w-0 max-w-full items-center gap-0.5">
                     <button
                       type="button"
                       aria-label={`Preview ${file.name}`}
                       onClick={() => ctx.onFileOpen(file)}
-                      className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+                      className="focus-visible:ring-ring/70 flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left hover:underline focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
                     >
                       {fileIdentity}
-                      <EyeIcon className="size-4 shrink-0" />
                     </button>
                     <Tooltip>
                       <TooltipTrigger
@@ -2196,72 +2244,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               }
 
               return (
-                <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                <div key={file.id} className="flex h-6 min-w-0 max-w-full items-center gap-1.5">
                   {fileIdentity}
                 </div>
               );
             })}
             {unknownAttachments.map((attachment) => (
-              <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+              <div key={attachment.id} className="flex h-6 min-w-0 max-w-full items-center gap-1.5">
                 <PierreEntryIcon
                   pathValue={attachment.name}
                   kind="file"
                   theme={ctx.resolvedTheme}
                 />
-                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                <span className="min-w-0 truncate">{attachment.name}</span>
               </div>
             ))}
           </div>
         ) : null}
-        <div onCopyCapture={onBodyCopyCapture}>
-          <CollapsibleUserMessageBody
-            text={resolvedContext.text}
-            renderContextReference={renderContextReference}
-            skills={ctx.skills}
-            markdownCwd={ctx.markdownCwd}
-          />
-        </div>
-      </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <p className="text-muted-foreground text-xs tabular-nums @max-[45rem]/pane:hidden" />
-              }
-            >
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipPopup>
-          </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
-            )}
-            {resolvedContext.text && (
-              <MessageCopyButton
-                // Structured paste needs the canonical links to retain their positions.
-                text={
-                  contextClipboardFragment
-                    ? resolvedContext.text
-                    : replaceComposerContextReferences(
-                        resolvedContext.text,
-                        (reference) => reference.label,
-                      )
-                }
-                {...(contextClipboardFragment
-                  ? {
-                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
-                    }
-                  : {})}
-                variant="ghost"
-              />
-            )}
-          </div>
-        </div>
-      </div>
+      </ChatGutterRow>
     </div>
   );
 }
@@ -2304,8 +2304,8 @@ function RevertUserMessageButton({
         render={
           <Button
             type="button"
-            size="xs"
-            variant="ghost"
+            size="icon-xs"
+            variant="ghost-muted"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
             onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
             aria-label="Edit from here"
@@ -2343,7 +2343,7 @@ function TimelineRowTimestamp({
         render={
           <span
             className={cn(
-              "pointer-events-none absolute me-1 shrink-0 whitespace-nowrap rounded-md text-muted-foreground text-xs tabular-nums opacity-0 @max-[45rem]/pane:hidden group-hover/timeline-row:pointer-events-auto group-hover/timeline-row:static group-hover/timeline-row:opacity-100 group-focus-within/timeline-row:pointer-events-auto group-focus-within/timeline-row:static group-focus-within/timeline-row:opacity-100",
+              "pointer-events-none absolute me-1 shrink-0 whitespace-nowrap rounded-md text-chat-meta text-muted-foreground tabular-nums opacity-0 @max-[40rem]/chat:hidden group-hover/timeline-row:pointer-events-auto group-hover/timeline-row:static group-hover/timeline-row:opacity-100 group-focus-within/timeline-row:pointer-events-auto group-focus-within/timeline-row:static group-focus-within/timeline-row:opacity-100",
               className,
             )}
           />
@@ -2361,34 +2361,45 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
-    <div className="group/timeline-row relative flex items-center gap-1 border-b border-border/60 pb-2 pe-0.5 pt-1">
-      <button
-        type="button"
-        aria-expanded={row.expanded}
-        data-scroll-anchor-ignore
-        onClick={() => ctx.onToggleTurnFold(row.turnId)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      >
-        <span>{row.label}</span>
-        <Icon className="size-3.5" />
-      </button>
-      <TimelineRowTimestamp
-        createdAt={row.createdAt}
-        timestampFormat={ctx.timestampFormat}
-        className="ms-auto"
-      />
-    </div>
+    <>
+      <ChatGutterRow glyph="action" className="group/timeline-row">
+        <div className="flex min-h-(--chat-row) items-center gap-1">
+          <button
+            type="button"
+            aria-expanded={row.expanded}
+            data-scroll-anchor-ignore
+            onClick={() => ctx.onToggleTurnFold(row.turnId)}
+            className="flex min-h-6 cursor-pointer select-none items-center gap-1 rounded-sm text-chat-meta font-medium text-secondary-label tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          >
+            <span>{row.label}</span>
+            <Icon aria-hidden className="size-3" />
+          </button>
+          <TimelineRowTimestamp
+            createdAt={row.createdAt}
+            timestampFormat={ctx.timestampFormat}
+            className="ms-auto"
+          />
+        </div>
+      </ChatGutterRow>
+      {row.turnFooter ? (
+        <TurnFooter footer={row.turnFooter} endedAt={null} turnSummary={undefined} />
+      ) : null}
+    </>
   );
 }
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const { latestTurnId } = use(TimelineRowActivityCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  // The latest turn lists its changed files; older turns fold them into the footer.
+  const showChangedFiles =
+    row.assistantTurnDiffSummary !== undefined &&
+    row.assistantTurnDiffSummary.turnId === latestTurnId;
 
   return (
-    <>
-      <div className="relative min-w-0 px-1 py-0.5">
-        <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
+    <div className="relative min-w-0">
+      <div className="ps-(--chat-content-inset)">
         <AssistantCitationSource
           messageId={row.message.id}
           {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
@@ -2397,6 +2408,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           listRef={ctx.listRef}
         >
           <ChatMarkdown
+            className="text-chat"
             text={messageText}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
@@ -2409,22 +2421,31 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onImageExpand={ctx.onImageExpand}
           />
         </AssistantCitationSource>
-        <AssistantChangedFilesSection
-          turnSummary={row.assistantTurnDiffSummary}
-          routeThreadKey={ctx.routeThreadKey}
-          resolvedTheme={ctx.resolvedTheme}
-          onOpenTurnDiff={ctx.onOpenTurnDiff}
-        />
-        {row.showAssistantMeta ? (
-          <AssistantMessageMeta
-            className="mt-1.5"
-            message={row.message}
-            showCopyButton={row.showAssistantCopyButton}
-            copyStreaming={row.assistantCopyStreaming}
+        {showChangedFiles ? (
+          <AssistantChangedFilesSection
+            turnSummary={row.assistantTurnDiffSummary}
+            routeThreadKey={ctx.routeThreadKey}
+            resolvedTheme={ctx.resolvedTheme}
+            onOpenTurnDiff={ctx.onOpenTurnDiff}
           />
         ) : null}
       </div>
-    </>
+      {row.showAssistantMeta ? (
+        <TurnFooter
+          footer={row.turnFooter ?? null}
+          endedAt={row.message.updatedAt}
+          streaming={row.message.streaming}
+          turnSummary={showChangedFiles ? undefined : row.assistantTurnDiffSummary}
+          copy={
+            <AssistantCopyButton
+              message={row.message}
+              showCopyButton={row.showAssistantCopyButton}
+              streaming={row.assistantCopyStreaming}
+            />
+          }
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -2433,63 +2454,92 @@ function AssistantMetaTimelineRow({
 }: {
   row: Extract<TimelineRow, { kind: "assistant-meta" }>;
 }) {
+  const { latestTurnId } = use(TimelineRowActivityCtx);
   return (
-    <div className="px-1">
-      <AssistantMessageMeta
-        className="mt-0.5"
-        message={row.message}
-        showCopyButton={row.showAssistantCopyButton}
-        copyStreaming={row.assistantCopyStreaming}
-        alwaysVisible
-      />
-    </div>
+    <TurnFooter
+      footer={row.turnFooter ?? null}
+      endedAt={row.message.updatedAt}
+      streaming={row.message.streaming}
+      turnSummary={
+        row.assistantTurnDiffSummary?.turnId === latestTurnId
+          ? undefined
+          : row.assistantTurnDiffSummary
+      }
+      copy={
+        <AssistantCopyButton
+          message={row.message}
+          showCopyButton={row.showAssistantCopyButton}
+          streaming={row.assistantCopyStreaming}
+        />
+      }
+    />
   );
 }
 
-function AssistantMessageMeta({
-  className,
-  message,
-  showCopyButton,
-  copyStreaming,
-  alwaysVisible = false,
+/**
+ * The one dim line that closes a settled turn: "Worked 44s · 10:04 PM · 2 files
+ * +12 −3", with a hairline to the edge. Older turns fold their changed files into
+ * it; the latest turn lists them above. Copy shows on hover or focus.
+ */
+function TurnFooter({
+  footer,
+  endedAt,
+  streaming = false,
+  turnSummary,
+  copy,
 }: {
-  className?: string;
-  message: ChatMessage;
-  showCopyButton: boolean;
-  copyStreaming: boolean;
-  alwaysVisible?: boolean;
+  footer: TurnFooterModel | null;
+  /** When the turn ended; null when no answer recorded it. */
+  endedAt: string | null;
+  streaming?: boolean;
+  turnSummary: TurnDiffSummary | undefined;
+  copy?: ReactNode;
 }) {
   const ctx = use(TimelineRowCtx);
-
+  const files = turnSummary?.files ?? [];
+  const additions = files.reduce((total, file) => total + file.additions, 0);
+  const deletions = files.reduce((total, file) => total + file.deletions, 0);
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
-        alwaysVisible
-          ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
-        className,
-      )}
-    >
-      <AssistantCopyButton
-        message={message}
-        showCopyButton={showCopyButton}
-        streaming={copyStreaming}
-      />
-      {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <p className="text-muted-foreground text-xs tabular-nums @max-[45rem]/pane:hidden" />
-            }
+    <div className="mt-2 flex min-h-(--chat-row) items-center gap-1.5 ps-(--chat-content-inset) text-chat-meta text-muted-foreground tabular-nums">
+      {footer ? <span className="shrink-0">{describeTurnFooterLead(footer)}</span> : null}
+      {!streaming && endedAt ? (
+        <>
+          {footer ? <span aria-hidden>·</span> : null}
+          <Tooltip>
+            <TooltipTrigger render={<span className="shrink-0" />}>
+              {formatDayAwareTimestamp(endedAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>{formatChatTimestampTooltip(endedAt, ctx.timestampFormat)}</TooltipPopup>
+          </Tooltip>
+        </>
+      ) : null}
+      {turnSummary && files.length > 0 ? (
+        <>
+          <span aria-hidden>·</span>
+          <button
+            type="button"
+            className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            onClick={() => ctx.onOpenTurnDiff(turnSummary.turnId)}
+            aria-label={`Review ${files.length} changed ${files.length === 1 ? "file" : "files"}`}
           >
-            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
-          </TooltipPopup>
-        </Tooltip>
-      )}
+            <span className="underline decoration-border underline-offset-2">
+              {files.length} {files.length === 1 ? "file" : "files"}
+            </span>
+            {additions > 0 ? (
+              <span className="text-diff-addition-foreground">+{additions}</span>
+            ) : null}
+            {deletions > 0 ? (
+              <span className="text-diff-deletion-foreground">−{deletions}</span>
+            ) : null}
+          </button>
+        </>
+      ) : null}
+      <span aria-hidden className="h-px min-w-4 flex-1 bg-border/60" />
+      {copy ? (
+        <span className="opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100">
+          {copy}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -2524,7 +2574,7 @@ function ProposedPlanTimelineRow({
   const ctx = use(TimelineRowCtx);
 
   return (
-    <div className="min-w-0 px-1 py-0.5">
+    <div className="min-w-0 ps-(--chat-content-inset)">
       <ProposedPlanCard
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -2536,43 +2586,37 @@ function ProposedPlanTimelineRow({
   );
 }
 
+/**
+ * The live turn's footer, in the slot the settled footer takes: "Working 1m 19s"
+ * with a hairline to the edge. Setup and compaction swap their words in place.
+ */
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
   // One span for every label so the setup-to-working handoff swaps text in
   // place instead of remounting the row.
-  const shimmer = isPreparingWorktree || isCompacting;
   const label = isPreparingWorktree ? (
     "Setting up worktree…"
   ) : isCompacting ? (
     <CompactingLabel />
   ) : row.createdAt ? (
-    <>
-      Working for <WorkingTimer createdAt={row.createdAt} />
-    </>
+    <WorkingTimer createdAt={row.createdAt} />
   ) : (
-    "Working..."
+    "Working…"
   );
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
-        <span
-          ref={shimmer ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap"
-        >
-          {label}
-          {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
-        </span>
-        {backgroundWorktreeSetup ? (
-          <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
-        ) : null}
-      </div>
+    <div className="mt-2 flex min-h-(--chat-row) min-w-0 items-center gap-1.5 ps-(--chat-content-inset) text-chat-meta text-info-foreground tabular-nums">
+      <span className="shrink-0 whitespace-nowrap">{label}</span>
+      <span aria-hidden className="h-px min-w-4 flex-1 bg-border/60" />
+      {backgroundWorktreeSetup ? (
+        <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
+      ) : null}
     </div>
   );
 }
 
 /**
- * Trailing chip in the working header while a setup script still runs after
+ * Trailing chip in the working footer while a setup script still runs after
  * the agent started. Opens the stage list and live output in a popover; the
  * chip leaves with the script, so nothing lingers in the timeline.
  */
@@ -2640,9 +2684,8 @@ function ActivityGroupTimelineRow({
     (entry) => entry,
   );
   const liveWork = trailingWork.findLast(workEntryIsActiveTurnActivity) ?? trailingWork.at(-1);
-  const thinking = row.active && liveWork === undefined;
-  const iconWork = row.active ? liveWork : work.at(-1);
-  const failed = iconWork !== undefined && workEntryDisplayIndicatesToolFailure(iconWork);
+  const statusWork = row.active ? liveWork : work.at(-1);
+  const failed = statusWork !== undefined && workEntryDisplayIndicatesToolFailure(statusWork);
   const label = row.active
     ? liveWork
       ? liveWorkEntryLabel(liveWork, ctx.workspaceRoot, true)
@@ -2691,21 +2734,18 @@ function ActivityGroupTimelineRow({
     <div>
       <button
         type="button"
-        className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-label={failed ? `${label}, tool call failed` : undefined}
+        className="group/live-work flex w-full max-w-full cursor-pointer items-center rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
         <LiveActivityRow
           label={label}
-          iconName={iconWork ? workEntryIconName(iconWork) : "brain"}
-          toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}
           failed={failed}
           active={row.active}
-          shimmer={thinking}
+          expanded={row.expanded}
         />
       </button>
-      {row.expanded ? <div className="mt-2">{details}</div> : null}
+      {row.expanded ? <div className="mt-0.5">{details}</div> : null}
     </div>
   );
 }
@@ -2714,10 +2754,8 @@ function ThinkingTimelineRow() {
   const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
   // Reserve the activity row during setup so the handoff keeps the same height.
   return (
-    <div className="min-h-7">
-      {isPreparingWorktree || isCompacting ? null : (
-        <LiveActivityRow label="Thinking" iconName="brain" active shimmer />
-      )}
+    <div className="min-h-(--chat-row)">
+      {isPreparingWorktree || isCompacting ? null : <LiveActivityRow label="Thinking" active />}
     </div>
   );
 }
@@ -2775,50 +2813,31 @@ function ReasoningTraceBlock({
   ) {
     return null;
   }
-  const label = streaming ? "Thinking" : "Thought";
+  const label = streaming ? "Thinking" : thoughtLabel(first.createdAt, messages.at(-1)!.updatedAt);
   const collapsedPreview = messages.find((message) => message.text.trim().length > 0)?.text.trim();
-  const headerText = expanded ? (
-    label
-  ) : (
-    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkThoughtPreview, label]]}>
-      {collapsedPreview ?? label}
-    </ReactMarkdown>
-  );
   return (
     <div className="flex flex-col">
       {showHeader ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => ctx.onToggleReasoning(first.id, !expanded, anchorKey)}
-          className="flex min-h-6 cursor-pointer select-none items-center gap-1.5 rounded-md ps-0.5 pe-2 text-start text-sm leading-relaxed transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        >
-          <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-            <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-2 opacity-70" />
-          </span>
-          <span
-            ref={streaming ? observeVisibleAnimation : undefined}
-            className="relative min-w-0 flex-1 truncate text-secondary-label"
-          >
-            {headerText}
-            {streaming ? <ActivityShimmerOverlay>{headerText}</ActivityShimmerOverlay> : null}
-          </span>
-          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-            <ChevronRightIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-90",
-              )}
-            />
-          </span>
-        </button>
+        <ReasoningHeader
+          expanded={expanded}
+          onToggle={() => ctx.onToggleReasoning(first.id, !expanded, anchorKey)}
+          text={
+            expanded ? (
+              label
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm, [remarkThoughtPreview, label]]}>
+                {collapsedPreview ?? label}
+              </ReactMarkdown>
+            )
+          }
+        />
       ) : null}
       {expanded ? (
-        <div className="ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text">
+        <ReasoningBody>
           {messages.map((reasoningMessage) => (
             <ChatMarkdown
               key={reasoningMessage.id}
-              className="text-foreground"
+              className="text-chat text-muted-foreground"
               text={reasoningMessage.text}
               cwd={ctx.markdownCwd}
               threadRef={ctx.threadRef ?? undefined}
@@ -2830,8 +2849,58 @@ function ReasoningTraceBlock({
               onImageExpand={ctx.onImageExpand}
             />
           ))}
-        </div>
+        </ReasoningBody>
       ) : null}
+    </div>
+  );
+}
+
+/** "Thought · 6s" from a trace's first write to its last. */
+function thoughtLabel(startedAt: string, endedAt: string): string {
+  const elapsedMs = Date.parse(endedAt) - Date.parse(startedAt);
+  return Number.isFinite(elapsedMs) && elapsedMs >= 1000
+    ? `Thought · ${formatDuration(elapsedMs)}`
+    : "Thought";
+}
+
+/** The one-line disclosure for a thinking trace: its label, or a plain preview while closed. */
+function ReasoningHeader({
+  expanded,
+  onToggle,
+  text,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  text: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      className="w-full cursor-pointer select-none rounded-sm text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+    >
+      <ChatGutterRow glyph={null}>
+        <span className="flex min-h-(--chat-row) min-w-0 items-center gap-1 text-chat-meta">
+          <span className="min-w-0 flex-1 truncate text-secondary-label">{text}</span>
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-icon-muted transition-transform duration-200",
+              expanded && "rotate-90",
+            )}
+          />
+        </span>
+      </ChatGutterRow>
+    </button>
+  );
+}
+
+/** A thinking trace's text: dim prose indented under its header. */
+function ReasoningBody({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex max-h-96 flex-col gap-(--chat-gap) overflow-auto ps-(--chat-content-inset) py-0.5 select-text">
+      <div className="flex flex-col gap-(--chat-gap) ps-3">{children}</div>
     </div>
   );
 }
@@ -2859,34 +2928,16 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
   }
 
   return (
-    <div className={cn("flex flex-col", expanded && "mb-1")}>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={toggle}
-        className="flex cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0.5 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      >
-        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-2 opacity-70" />
-        </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="relative min-w-0 flex-1 truncate text-secondary-label text-sm leading-relaxed">
-            Thought
-          </span>
-          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-            <ChevronRightIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-90",
-              )}
-            />
-          </span>
-        </span>
-      </button>
+    <div className="flex flex-col">
+      <ReasoningHeader
+        expanded={expanded}
+        onToggle={toggle}
+        text={thoughtLabel(message.createdAt, message.updatedAt)}
+      />
       {expanded ? (
-        <div className="mt-1 ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text">
+        <ReasoningBody>
           <ChatMarkdown
-            className="text-foreground"
+            className="text-chat text-muted-foreground"
             text={message.text}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
@@ -2896,7 +2947,7 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
             onImageExpand={ctx.onImageExpand}
           />
-        </div>
+        </ReasoningBody>
       ) : null}
     </div>
   );
@@ -2916,7 +2967,7 @@ function CompactingLabel() {
 // does not create a React commit every second while a response is streaming.
 // ---------------------------------------------------------------------------
 
-/** Live elapsed time for the "Working for" label. */
+/** "Working 1m 19s" for the live footer, ticking once a second. */
 function WorkingTimer({ createdAt }: { createdAt: string }) {
   const textRef = useRef<HTMLSpanElement>(null);
   const initialText = formatWorkingTimerNow(createdAt);
@@ -2982,8 +3033,8 @@ const WorkGroupSection = memo(function WorkGroupSection({
   }
 
   return (
-    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label="Activity">
-      <div className="space-y-px">
+    <section aria-label="Activity">
+      <div className="flex flex-col">
         {nonEmptyEntries.map((workEntry) => (
           <SimpleWorkEntryRow
             key={workEntry.id}
@@ -3143,119 +3194,47 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
-function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden
-      className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
-    >
-      <span className="live-activity-focus-counter block">
-        <span className="live-activity-focus-aligned block text-foreground">{children}</span>
-      </span>
-    </span>
-  );
-}
-
-const failedToolIconClassName = "text-tool-error-icon/40";
-
-/** Image icons and the gradient computer-use mark cannot take a currentColor
- *  tint, so failed rows using them get a trailing x instead. */
-function toolIconAcceptsTint(
-  iconName: WorkEntryIconName,
-  toolIcon: ToolActivityIcon | undefined,
-): boolean {
-  return toolIcon === undefined && iconName !== "computer";
-}
-
+/**
+ * One work line: a gutter glyph (◑ running, × failed, • done) and the label,
+ * with a chevron when it opens. Static by design: a running row never animates.
+ */
 function LiveActivityRow({
   label,
-  iconName,
-  toolIcon,
   failed = false,
   active = false,
-  shimmer = false,
+  expanded,
 }: {
   label: ReactNode;
-  iconName?: WorkEntryIconName;
-  toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
   active?: boolean;
-  shimmer?: boolean;
+  /** Whether the row's details are open; omit for rows that do not open. */
+  expanded?: boolean | undefined;
 }) {
-  const animated = active && !failed;
-  const showShimmer = animated && shimmer;
+  const running = active && !failed;
+  // The glyph never carries the failure alone: say it unless the label does.
+  const saysFailed = typeof label === "string" && /^failed\b/i.test(label);
   return (
-    <div
-      ref={animated ? observeVisibleAnimation : undefined}
-      className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
-    >
-      <LiveActivityContent
-        label={label}
-        iconName={iconName}
-        toolIcon={toolIcon}
-        failed={failed}
-        announceFailure={failed}
-        active={animated && !shimmer}
-      />
-      {showShimmer ? (
-        <ActivityShimmerOverlay>
-          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
-        </ActivityShimmerOverlay>
-      ) : null}
-    </div>
-  );
-}
-
-function LiveActivityContent({
-  label,
-  iconName,
-  toolIcon,
-  failed = false,
-  announceFailure = false,
-  active = false,
-  highlighted = false,
-}: {
-  label: ReactNode;
-  iconName: WorkEntryIconName | undefined;
-  toolIcon?: ToolActivityIcon | undefined;
-  failed?: boolean;
-  announceFailure?: boolean;
-  active?: boolean;
-  highlighted?: boolean;
-}) {
-  const showTrailingFailureMark =
-    failed && iconName !== undefined && !toolIconAcceptsTint(iconName, toolIcon);
-
-  return (
-    <span
-      className={cn(
-        "flex min-h-6 min-w-0 items-center gap-1.5 py-0.5",
-        iconName ? "px-0.5" : "px-1",
-        highlighted ? "text-foreground" : "text-secondary-label",
-      )}
-    >
-      {iconName ? (
+    <ChatGutterRow glyph={failed ? "failed" : running ? "running" : "action"} className="w-full">
+      <span className="flex min-h-(--chat-row) min-w-0 items-center gap-1 text-chat-meta">
         <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center",
-            failed ? failedToolIconClassName : highlighted ? "text-foreground" : "text-icon-muted",
-          )}
-          role={announceFailure ? "img" : undefined}
-          aria-label={announceFailure ? "Tool call failed" : undefined}
+          className={cn("min-w-0 truncate", running ? "text-foreground" : "text-secondary-label")}
         >
-          <ToolActivityIconView
-            icon={toolIcon}
-            fallbackName={iconName}
-            className="block size-4 shrink-0 stroke-2"
-            muted={!highlighted}
-          />
+          {label}
         </span>
-      ) : null}
-      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
-      {showTrailingFailureMark ? (
-        <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
-      ) : null}
-    </span>
+        {failed && !saysFailed ? (
+          <span className="shrink-0 text-error-foreground">failed</span>
+        ) : null}
+        {expanded !== undefined ? (
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-icon-muted transition-transform duration-200",
+              expanded && "rotate-90",
+            )}
+          />
+        ) : null}
+      </span>
+    </ChatGutterRow>
   );
 }
 
@@ -3276,8 +3255,7 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
   return (
     <button
       type="button"
-      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-label={failed ? `${label}, tool call failed` : undefined}
+      className="group/live-work flex w-full max-w-full cursor-pointer items-center rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
@@ -3301,50 +3279,12 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
             label
           )
         }
-        iconName={workEntryIconName(row.entry)}
-        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
         failed={failed}
         active={row.active}
+        expanded={row.expanded}
       />
     </button>
   );
-}
-
-function toolGroupSummaryIconName(
-  kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
-): WorkEntryIconName {
-  switch (kind) {
-    case "pull-request":
-    case "link-pr":
-    case "unlink-pr":
-    case "list-prs":
-      return "pull-request";
-    case "read":
-      return "eye";
-    case "edit":
-      return "square-pen";
-    case "command":
-      return "terminal";
-    case "browser":
-      return "browser";
-    case "device":
-      return "device";
-    case "search":
-      return "globe";
-    case "code-search":
-      return "search";
-    case "other":
-      return "wrench";
-    case "dynamic-tool":
-      return "hammer";
-    case "agent-tool":
-      return "bot";
-    case "tone-tool":
-      return "zap";
-    case "update":
-    case "mixed":
-      return "hammer";
-  }
 }
 
 function WorkGroupToggleTimelineRow({
@@ -3356,23 +3296,28 @@ function WorkGroupToggleTimelineRow({
   return (
     <button
       type="button"
-      className="group/tool-group group/timeline-row relative flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
+      className="group/timeline-row w-full cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <ToolActivityIconView
-          icon={row.toolIcon}
-          fallbackName={
-            row.summaryToolIcon ?? row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind)
-          }
-          className="size-4 shrink-0 stroke-2"
-          muted
-        />
-      </span>
-      <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
-      <TimelineRowTimestamp createdAt={row.createdAt} timestampFormat={ctx.timestampFormat} />
+      <ChatGutterRow glyph={row.hasFailure ? "failed" : "action"}>
+        <span className="relative flex min-h-(--chat-row) min-w-0 items-center gap-1 text-chat-meta">
+          <span className="min-w-0 truncate text-secondary-label">{row.summary}</span>
+          {row.hasFailure ? <span className="shrink-0 text-error-foreground">failed</span> : null}
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-icon-muted transition-transform duration-200",
+              row.expanded && "rotate-90",
+            )}
+          />
+          <TimelineRowTimestamp
+            createdAt={row.createdAt}
+            timestampFormat={ctx.timestampFormat}
+            className="ms-auto"
+          />
+        </span>
+      </ChatGutterRow>
     </button>
   );
 }
@@ -3960,7 +3905,10 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
     <div>
       {hasVisibleBody ? (
         <div
-          className={cn("relative", isCollapsed && "max-h-44 overflow-hidden")}
+          className={cn(
+            "relative",
+            isCollapsed && "max-h-[calc(var(--chat-text-leading)*4)] overflow-hidden",
+          )}
           data-user-message-body="true"
           data-user-message-collapsed={isCollapsed ? "true" : "false"}
           data-user-message-collapsible={canCollapse ? "true" : "false"}
@@ -3985,8 +3933,8 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
       {canCollapse || props.footer ? (
         <div
           className={cn(
-            "mt-1.5 flex items-center gap-2",
-            canCollapse && props.footer ? "justify-between" : "justify-end",
+            "mt-0.5 flex items-center gap-2",
+            canCollapse && props.footer ? "justify-between" : "justify-start",
           )}
           data-user-message-footer="true"
         >
@@ -4028,7 +3976,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
       skills={props.skills}
-      className="text-message-foreground"
+      className="text-chat text-foreground"
       lineBreaks
       parseRawHtml={false}
       renderContextReference={props.renderContextReference}
@@ -4124,288 +4072,12 @@ function useStableRows(rows: MessagesTimelineRow[], identity: string): MessagesT
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-function formatWorkingTimer(startIso: string, endIso: string): string | null {
-  const startedAtMs = Date.parse(startIso);
-  const endedAtMs = Date.parse(endIso);
-  if (!Number.isFinite(startedAtMs) || !Number.isFinite(endedAtMs)) {
-    return null;
-  }
-
-  const elapsedSeconds = Math.max(0, Math.floor((endedAtMs - startedAtMs) / 1000));
-  if (elapsedSeconds < 60) {
-    return `${elapsedSeconds}s`;
-  }
-
-  return formatDuration(elapsedSeconds * 1_000);
-}
-
 function formatWorkingTimerNow(startIso: string): string {
-  return formatWorkingTimer(startIso, new Date().toISOString()) ?? "0s";
-}
-
-type WorkEntryIconName =
-  | "bot"
-  | "brain"
-  | "browser"
-  | "check"
-  | "circle-alert"
-  | "computer"
-  | "device"
-  | "eye"
-  | "globe"
-  | "hammer"
-  | "message-circle"
-  | "search"
-  | "square-pen"
-  | "terminal"
-  | "pull-request"
-  | "t3-code"
-  | "wrench"
-  | "x"
-  | "zap";
-
-function BrowserAppIcon({ className }: { className: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      <path d="M8.5 19H7.2C4.4 19 3 17.5 3 14.6V7.4C3 4.5 4.5 3 7.4 3h8.2C18.5 3 20 4.5 20 7.4v2.4" />
-      <circle cx="7.4" cy="7.2" r="0.75" fill="currentColor" stroke="none" />
-      <path d="M11.2 7.2h4.3" />
-      <path d="m12.4 11.4 7.5 2.6-3.4 1.6-1.5 3.6z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function ToolActivityIconView(props: {
-  icon: ToolActivityIcon | undefined;
-  fallbackName: WorkEntryIconName;
-  className: string;
-  muted: boolean;
-}) {
-  const { resolvedTheme } = use(TimelineRowCtx);
-  const fallbackClassName = cn(props.className, props.muted && "opacity-70 light:brightness-60");
-  if (!props.icon) {
-    return <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />;
-  }
-  if (props.icon._tag === "website") {
-    const src = toolActivityFaviconUrl(props.icon, resolvedTheme, 32);
-    return src ? (
-      <ToolActivityImageIcon
-        key={src}
-        cacheKey={src}
-        src={src}
-        fallbackName={props.fallbackName}
-        className={props.className}
-        muted={props.muted}
-      />
-    ) : (
-      <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />
-    );
-  }
-  if (props.icon._tag === "themed-logo") {
-    const src =
-      resolvedTheme === "dark"
-        ? (props.icon.logoUrlDark ?? props.icon.logoUrl)
-        : props.icon.logoUrl;
-    return (
-      <ToolActivityImageIcon
-        key={src}
-        cacheKey={src}
-        src={src}
-        fallbackName={props.fallbackName}
-        className={props.className}
-        muted={props.muted}
-      />
-    );
-  }
-  return (
-    <NativeAppToolActivityIcon
-      app={props.icon.app}
-      fallbackName={props.fallbackName}
-      className={props.className}
-      muted={props.muted}
-    />
-  );
-}
-
-function NativeAppToolActivityIcon(props: {
-  app: Extract<ToolActivityIcon, { readonly _tag: "native-app" }>["app"];
-  fallbackName: WorkEntryIconName;
-  className: string;
-  muted: boolean;
-}) {
-  const { activeThreadEnvironmentId } = use(TimelineRowCtx);
-  const asset = useAssetUrlState(activeThreadEnvironmentId, {
-    _tag: "native-app-icon",
-    app: props.app,
+  return describeTurnFooterLead({
+    state: "working",
+    startedAt: startIso,
+    nowIso: new Date().toISOString(),
   });
-  if (asset._tag !== "Success") {
-    return (
-      <WorkEntryIcon
-        name={props.fallbackName}
-        className={cn(props.className, props.muted && "opacity-70 light:brightness-60")}
-      />
-    );
-  }
-  const cacheKey = getProjectFaviconCacheKey(
-    activeThreadEnvironmentId,
-    JSON.stringify(props.app),
-    asset.url,
-  );
-  return (
-    <ToolActivityImageIcon
-      key={cacheKey}
-      cacheKey={cacheKey}
-      src={asset.url}
-      fallbackName={props.fallbackName}
-      className={props.className}
-      muted={props.muted}
-    />
-  );
-}
-
-const loadedToolActivityIconSrcs = new Map<string, string>();
-
-function ToolActivityImageIcon(props: {
-  cacheKey: string;
-  src: string;
-  fallbackName: WorkEntryIconName;
-  className: string;
-  muted: boolean;
-}) {
-  const [displayedSrc, setDisplayedSrc] = useState<string | null>(
-    () => loadedToolActivityIconSrcs.get(props.cacheKey) ?? null,
-  );
-  const isLoading = displayedSrc !== props.src;
-  const handleLoadError = (failedSrc: string) => {
-    if (loadedToolActivityIconSrcs.get(props.cacheKey) === failedSrc) {
-      loadedToolActivityIconSrcs.delete(props.cacheKey);
-    }
-    setDisplayedSrc((currentSrc) => (currentSrc === failedSrc ? null : currentSrc));
-  };
-  return (
-    <>
-      {displayedSrc === null ? (
-        <WorkEntryIcon
-          name={props.fallbackName}
-          className={cn(props.className, props.muted && "opacity-70 light:brightness-60")}
-        />
-      ) : null}
-      {displayedSrc ? (
-        <span
-          className={cn(
-            props.className,
-            "inline-block overflow-hidden rounded-xs bg-background",
-            props.muted && "opacity-70",
-          )}
-        >
-          <img
-            src={displayedSrc}
-            alt=""
-            aria-hidden
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className={cn("block size-full object-contain", props.muted && "light:brightness-60")}
-            onError={() => handleLoadError(displayedSrc)}
-          />
-        </span>
-      ) : null}
-      {isLoading ? (
-        <img
-          src={props.src}
-          alt=""
-          aria-hidden
-          decoding="async"
-          referrerPolicy="no-referrer"
-          className="hidden"
-          onLoad={() => {
-            loadedToolActivityIconSrcs.set(props.cacheKey, props.src);
-            setDisplayedSrc(props.src);
-          }}
-          onError={() => handleLoadError(props.src)}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className: string }) {
-  switch (name) {
-    case "pull-request":
-      return <PullRequestGlyph.pullRequest className={className} aria-hidden />;
-    case "bot":
-      return <BotIcon className={className} aria-hidden />;
-    case "brain":
-      return <BrainIcon className={className} aria-hidden />;
-    case "browser":
-      return <BrowserAppIcon className={className} />;
-    case "computer":
-      return <ComputerUseAppIcon className={className} />;
-    case "device":
-      return <SmartphoneIcon className={className} aria-hidden />;
-    case "t3-code":
-      return <T3Wordmark className={className} aria-hidden />;
-    case "check":
-      return <CheckIcon className={className} aria-hidden />;
-    case "circle-alert":
-      return <CircleAlertIcon className={className} aria-hidden />;
-    case "eye":
-      return <EyeIcon className={className} aria-hidden />;
-    case "globe":
-      return <GlobeIcon className={className} aria-hidden />;
-    case "hammer":
-      return <HammerIcon className={className} aria-hidden />;
-    case "message-circle":
-      return <MessageCircleIcon className={className} aria-hidden />;
-    case "search":
-      return <SearchIcon className={className} aria-hidden />;
-    case "square-pen":
-      return <SquarePenIcon className={className} aria-hidden />;
-    case "terminal":
-      return <TerminalIcon className={className} aria-hidden />;
-    case "wrench":
-      return <WrenchIcon className={className} aria-hidden />;
-    case "x":
-      return <XIcon className={className} aria-hidden />;
-    case "zap":
-      return <ZapIcon className={className} aria-hidden />;
-  }
-}
-
-function workToneIcon(tone: TimelineWorkEntry["tone"]): {
-  iconName: WorkEntryIconName;
-  className: string;
-} {
-  if (tone === "error") {
-    return {
-      iconName: "circle-alert",
-      className: "text-foreground",
-    };
-  }
-  if (tone === "thinking") {
-    return {
-      iconName: "brain",
-      className: "text-icon-muted",
-    };
-  }
-  if (tone === "info") {
-    return {
-      iconName: "check",
-      className: "text-icon-muted",
-    };
-  }
-  return {
-    iconName: "zap",
-    className: "text-foreground",
-  };
 }
 
 function workEntryRawCommand(
@@ -4467,38 +4139,7 @@ function buildToolCallExpandedBody(
 }
 
 const toolCallExpandedBodyClassName =
-  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-(length:--font-size-code,var(--text-2xs)) leading-relaxed select-text";
-
-function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
-  if (
-    workEntry.questionAnswer ||
-    workEntry.sourceActivityKind === "user-input.requested" ||
-    workEntry.sourceActivityKind === "user-input.resolved"
-  ) {
-    return "message-circle";
-  }
-  if (workEntry.toolSurface) return workEntry.toolSurface;
-  const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
-  if (toolPresentation) return toolPresentation.icon;
-  const action = toolGroupAction(workEntry);
-  if (action !== "other") return toolGroupSummaryIconName(action);
-
-  switch (workEntry.itemType) {
-    case "mcp_tool_call":
-      return "wrench";
-    case "dynamic_tool_call":
-      return "hammer";
-    case "collab_agent_tool_call":
-      return "bot";
-  }
-
-  // Subagent lifecycle rows (grouped by taskId) get agent identity chrome.
-  if (workEntry.taskId) {
-    return "bot";
-  }
-
-  return workToneIcon(workEntry.tone).iconName;
-}
+  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-chat-meta text-secondary-label select-text";
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
@@ -4560,24 +4201,24 @@ const AgentSpawnRow = memo(function AgentSpawnRow(props: {
         type="button"
         aria-expanded={expanded}
         onClick={toggleExpanded}
-        className="flex cursor-pointer select-none rounded-md text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex w-full cursor-pointer select-none rounded-sm text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <LiveActivityRow
           label={workflowName ? `${lead} · ${workflowName}` : lead}
-          iconName="bot"
           active={live && props.active !== false}
           failed={failed}
+          expanded={expanded}
         />
       </button>
       {expanded ? (
-        <div className="ms-7 mt-0.5 flex flex-col">
+        <div className="mt-0.5 flex flex-col ps-(--chat-content-inset)">
           {agents.map((agent) => (
             <AgentSpawnMemberRow key={agent.id} agent={agent} onToggleEntry={props.onToggleEntry} />
           ))}
           <button
             type="button"
             onClick={onOpenAgents}
-            className="mt-1 self-start rounded-sm px-1 text-xs text-muted-foreground hover:text-foreground"
+            className="flex h-6 items-center self-start rounded-sm text-chat-meta text-muted-foreground hover:text-foreground"
           >
             Open Agents panel ›
           </button>
@@ -4662,17 +4303,17 @@ function AgentSpawnMemberRow({
           : undefined
       }
       className={cn(
-        "flex flex-col rounded-md px-1 py-0.5 transition-colors",
+        "flex flex-col rounded-sm transition-colors",
         canExpand &&
           "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
     >
       <div className="flex select-none items-center gap-1.5">
-        <p className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm leading-relaxed">
+        <p className="flex min-h-(--chat-row) min-w-0 flex-1 items-center gap-1.5 text-chat-meta">
           <span
             className={cn(
               "min-w-0 truncate",
-              agent.status === "failed" ? failedToolIconClassName : "text-foreground/80",
+              agent.status === "failed" ? "text-error-foreground" : "text-foreground",
             )}
           >
             {agent.title}
@@ -4683,20 +4324,18 @@ function AgentSpawnMemberRow({
             </span>
           ) : null}
         </p>
-        <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
+        <span className="shrink-0 text-chat-meta tabular-nums text-muted-foreground">
           {statusLabel}
         </span>
       </div>
       {!open && firstLine ? (
-        <p className="truncate text-xs text-muted-foreground">{firstLine}</p>
+        <p className="truncate text-chat-meta text-muted-foreground">{firstLine}</p>
       ) : null}
       {open ? (
-        <div
-          className="mt-1 cursor-default rounded-md bg-muted/40 px-3 py-2"
-          onClick={stopRowToggle}
-          onPointerDown={stopRowToggle}
-        >
-          <pre className={toolCallExpandedBodyClassName}>{body}</pre>
+        <div className="cursor-default" onClick={stopRowToggle} onPointerDown={stopRowToggle}>
+          <ChatGutterRow glyph="result">
+            <pre className={toolCallExpandedBodyClassName}>{body}</pre>
+          </ChatGutterRow>
         </div>
       ) : null}
     </div>
@@ -4725,7 +4364,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     <PlainWorkEntryRow
       workEntry={workEntry}
       workspaceRoot={workspaceRoot}
-      isExpandedToolGroupEntry={isExpandedToolGroupEntry}
       displayLabel={displayLabel}
       onToggleEntry={props.onToggleEntry}
     />
@@ -4735,11 +4373,10 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
 const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
-  isExpandedToolGroupEntry: boolean;
   displayLabel?: string | undefined;
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
-  const { workEntry, workspaceRoot, isExpandedToolGroupEntry, displayLabel } = props;
+  const { workEntry, workspaceRoot, displayLabel } = props;
   const { threadRef, onImageExpand, timestampFormat } = use(TimelineRowCtx);
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
@@ -4756,19 +4393,22 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     }
     setExpanded(next);
   };
-  const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
-  const entryIconName =
-    showWarningIndicator || showDestructiveRowStyle ? "circle-alert" : workEntryIconName(workEntry);
-  const entryToolIcon =
-    showWarningIndicator || showDestructiveRowStyle
-      ? undefined
-      : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
+  // Only running, failed and warning rows take color; done rows stay neutral.
+  const glyph: ChatGlyph = showWarningIndicator
+    ? "needs-you"
+    : showFailedIndicator
+      ? "failed"
+      : workEntry.toolLifecycleStatus === "inProgress"
+        ? "running"
+        : "action";
   const previewText = displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot);
+  // A raw command reads as a terminal receipt; named tools and prose stay in sans.
+  const monoLabel = workEntry.command !== undefined && previewText === workEntry.command;
   const answerPreview = workEntry.questionAnswer
     ? getQuestionAnswerPreview(workEntry.questionAnswer)
     : null;
@@ -4800,34 +4440,21 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       )
     : null;
   // Reserve destructive row styling for severe failures, not routine tool errors.
-  const iconWrapperClass = cn(
-    "flex size-6 shrink-0 items-center justify-center @max-[45rem]/pane:size-5",
-    showWarningIndicator
-      ? "text-warning"
-      : showDestructiveRowStyle
-        ? "text-destructive"
-        : showFailedIndicator
-          ? failedToolIconClassName
-          : workEntry.tone === "tool"
-            ? "text-icon-muted"
-            : iconConfig.className,
-  );
   const headingClass = showWarningIndicator
-    ? "font-medium text-warning"
+    ? "font-medium text-warning-foreground"
     : showDestructiveRowStyle
-      ? "font-medium text-destructive"
+      ? "font-medium text-error-foreground"
       : workLogEntryIsToolLike(workEntry)
         ? "text-secondary-label"
-        : "text-foreground/80";
+        : "text-foreground";
+  // The glyph never carries the state alone.
+  const stateWord = showFailedIndicator && !/^failed\b/i.test(previewText) ? "failed" : null;
   const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
-  const accessibleDisplayText = showFailedIndicator
-    ? `${accessiblePreview}, tool call failed`
-    : accessiblePreview;
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
         tabIndex: 0 as const,
-        "aria-label": accessibleDisplayText,
+        "aria-label": stateWord ? `${accessiblePreview}, failed` : accessiblePreview,
         "aria-expanded": expanded,
         onClick: toggleExpanded,
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
@@ -4842,84 +4469,60 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   return (
     <div
       className={cn(
-        "group/timeline-row relative flex flex-col rounded-md px-0.5 transition-colors",
-        isExpandedToolGroupEntry ? "py-0" : "py-0.5",
+        "group/timeline-row relative flex flex-col rounded-sm",
         expanded && "mb-1",
         canExpand &&
           "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
       {...rowToggleProps}
     >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
-        <span
-          className={iconWrapperClass}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-        >
-          <ToolActivityIconView
-            icon={entryToolIcon}
-            fallbackName={entryIconName}
-            className="block size-4 shrink-0 stroke-2"
-            muted
-          />
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed @max-[45rem]/pane:text-xs">
+      <ChatGutterRow glyph={glyph}>
+        <div className="flex min-h-(--chat-row) min-w-0 select-none items-center gap-1.5">
+          <p className="flex min-w-0 flex-1 items-baseline gap-1.5 text-chat-meta">
+            <span
+              className={cn(
+                answerPreview ? "shrink-0" : "min-w-0 flex-1",
+                expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                monoLabel && "font-mono",
+                headingClass,
+              )}
+              onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
+              onPointerDown={expanded ? stopRowToggle : undefined}
+            >
+              {previewText}
+            </span>
+            {answerPreview ? (
               <span
                 className={cn(
-                  answerPreview ? "shrink-0" : "min-w-0 flex-1",
-                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
-                  // A narrow workspace pane reads tool calls as terminal receipts.
-                  workLogEntryIsToolLike(workEntry) && "@max-[45rem]/pane:font-mono",
-                  headingClass,
+                  "min-w-0 truncate",
+                  !expanded &&
+                    workEntry.questionAnswer &&
+                    hasQuestionAnswer(workEntry.questionAnswer)
+                    ? "text-foreground"
+                    : "text-muted-foreground",
                 )}
-                onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
-                onPointerDown={expanded ? stopRowToggle : undefined}
               >
-                {previewText}
+                {answerPreview}
               </span>
-              {answerPreview ? (
-                <span
-                  className={cn(
-                    "min-w-0 truncate",
-                    !expanded &&
-                      workEntry.questionAnswer &&
-                      hasQuestionAnswer(workEntry.questionAnswer)
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {answerPreview}
-                </span>
-              ) : null}
-            </p>
-          </div>
-          {showFailedIndicator &&
-          !showDestructiveRowStyle &&
-          !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
-            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+            ) : null}
+          </p>
+          {stateWord ? (
+            <span className="shrink-0 text-chat-meta text-error-foreground">{stateWord}</span>
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
-          <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              !canExpand && "invisible",
-            )}
+          <ChevronRightIcon
             aria-hidden
-          >
-            <ChevronRightIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-90",
-              )}
-            />
-          </span>
+            className={cn(
+              "size-3 shrink-0 text-icon-muted transition-transform duration-200",
+              !canExpand && "invisible",
+              expanded && "rotate-90",
+            )}
+          />
         </div>
-      </div>
+      </ChatGutterRow>
       {expanded && viewedImage && threadRef ? (
         <div
-          className="mt-1 ms-7 cursor-default"
+          className="mt-0.5 cursor-default ps-(--chat-content-inset)"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
@@ -4939,11 +4542,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ) : null}
       {expanded && canExpand && expandedBody && !workEntry.questionAnswer ? (
         <div
-          className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"
+          className="cursor-default ps-(--chat-content-inset)"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          <ChatGutterRow glyph="result">
+            <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          </ChatGutterRow>
         </div>
       ) : null}
     </div>
@@ -4967,7 +4572,7 @@ function QuestionAnswerHistory({
   );
   const urls = useAssetUrls(activeThreadEnvironmentId, resources);
   return (
-    <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
+    <div className="mt-0.5 space-y-(--chat-gap) ps-(--chat-content-inset)" onClick={stopRowToggle}>
       {[
         ...new Set([
           ...Object.keys(answer.questionTextById ?? {}),
@@ -4977,12 +4582,12 @@ function QuestionAnswerHistory({
       ].map((questionId) => (
         <div key={questionId} className="space-y-1">
           {answer.questionTextById?.[questionId] ? (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+            <p className="whitespace-pre-wrap text-chat-meta text-muted-foreground">
               {answer.questionTextById[questionId]}
             </p>
           ) : null}
           {getQuestionAnswerText(answer.answers[questionId]) ? (
-            <p className="ms-3 whitespace-pre-wrap text-sm text-muted-foreground">
+            <p className="ms-3 whitespace-pre-wrap text-chat text-foreground">
               {getQuestionAnswerText(answer.answers[questionId])}
             </p>
           ) : null}
@@ -4995,7 +4600,7 @@ function QuestionAnswerHistory({
                   href={url ?? undefined}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm underline"
+                  className="text-chat-meta underline"
                 >
                   {attachment.type === "image" && url ? (
                     <img

@@ -508,10 +508,12 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Worked for 8.0s");
+    // The fold summarizes the work; the footer carries the duration.
+    expect(markup).toContain("1 action");
+    expect(markup).toContain("Worked 8.0s");
   });
 
-  it("keeps assistant changed-files headers sticky below the thread header", () => {
+  it("lists the latest turn's changed files under a pinned title row", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
     const markup = renderToStaticMarkup(
@@ -553,13 +555,10 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("sticky top-2 z-10");
-    expect(markup).not.toContain("self-start");
-    expect(markup).toContain("whitespace-nowrap");
-    expect(markup).toContain("size-3");
+    expect(markup).toContain("sticky top-0 z-10");
     expect(markup).not.toContain('aria-label="Collapse all folders"');
-    expect(markup).toContain('aria-label="Open diff"');
-    expect(markup).toContain("1 changed file");
+    expect(markup).toContain("1 file changed");
+    expect(markup).toContain("Review");
   });
 
   it("treats only the strict list end as the live edge", async () => {
@@ -1139,7 +1138,9 @@ describe("MessagesTimeline", () => {
 
     expect(markup).not.toContain("Show full message");
     expect(markup).toContain('data-user-message-collapsible="false"');
-    expect(markup).toContain("rounded-2xl bg-message p-3");
+    // No bubble: a visible speaker label and the prompt glyph mark the user.
+    expect(markup).toContain("<h3>You</h3>");
+    expect(markup).not.toContain("bg-message");
   });
 
   it("preserves arbitrary XML-like tags and comparisons in rendered user messages", async () => {
@@ -1431,7 +1432,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('aria-label="Tool call failed"');
   });
 
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
+  it("says the collapsed group failed in words beside the failure glyph", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1467,11 +1468,10 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Ran 2 commands");
-    expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("lucide-x");
+    // The glyph is never the only signal: the row says it failed.
+    expect(markup).toContain(">×<");
+    expect(markup).toContain(">failed<");
     expect(markup).not.toContain("text-destructive");
-    // The failure stays discoverable for screen readers.
-    expect(markup).toContain("tool call failed");
   });
 
   it("renders trailing tool calls as part of the terminal assistant block", () => {
@@ -1615,7 +1615,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Working for");
+    expect(markup).toMatch(/Working \d/);
     expect(markup).toContain("Running pnpm");
   });
 
@@ -1739,18 +1739,17 @@ describe("MessagesTimeline", () => {
         });
         await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
         const text = renderer!.root.findByProps({
-          className: "relative min-w-0 flex-1 truncate text-secondary-label",
+          className: "min-w-0 flex-1 truncate text-secondary-label",
         });
-        const preview = text.parent!;
+        let preview = text.parent!;
+        while (preview.type !== "button") preview = preview.parent!;
         expect(
           text
             .findAll(() => true)
             .flatMap((node) => node.children)
             .filter((child) => typeof child === "string")
             .join(""),
-        ).toBe(
-          (streaming && expected === "Thought" ? "Thinking" : expected).repeat(streaming ? 2 : 1),
-        );
+        ).toBe(streaming && expected === "Thought" ? "Thinking" : expected);
         expect(
           preview.findAll((node) =>
             ["strong", "em", "del", "code", "a"].includes(String(node.type)),
@@ -1785,7 +1784,9 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Thinking");
-    expect(markup).toContain("lucide-brain");
+    // A static running glyph, never a repainting animation.
+    expect(markup).toContain(">◑<");
+    expect(markup).not.toContain("live-tool-shine");
     expect(markup).toContain('data-timeline-row-id="live-activity-row"');
   });
 
@@ -1825,7 +1826,6 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Running pnpm");
-    expect(markup).toContain("lucide-terminal");
     expect(markup).not.toContain("Ran pnpm");
     expect(markup).not.toContain("Thinking");
     expect(markup).not.toContain('data-timeline-row-kind="thinking"');
@@ -2140,9 +2140,10 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Received 1 update and used 1 tool, tool call failed"');
+    expect(markup).toContain("Received 1 update and used 1 tool");
+    expect(markup).toContain(">failed<");
     // Ordinary tool failures do not use destructive row styling.
-    expect(markup).not.toContain("text-destructive");
+    expect(markup).not.toContain("font-medium text-error-foreground");
   });
 
   it("keeps the red treatment for severe orchestration failures", () => {
@@ -2177,8 +2178,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-circle-alert");
-    expect(markup).toContain("text-destructive");
+    expect(markup).toContain(">×<");
+    expect(markup).toContain("font-medium text-error-foreground");
   });
 
   it("only withholds an expanded tool-call label click while text is selected", async () => {
