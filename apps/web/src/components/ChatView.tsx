@@ -9920,9 +9920,9 @@ export default function ChatView(props: ChatViewProps) {
                 </div>
               </div>
             ) : null}
-            {/* Errors and provider status: opaque hairline rows stacked flat over the
-                top of the transcript, without changing its content height. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col">
+            {/* Errors and provider status: opaque hairline rows above the transcript.
+                In flow rather than overlaid, so they never hide its first rows. */}
+            <div className="relative z-20 flex shrink-0 flex-col">
               <ProviderStatusBanner
                 status={visibleProviderStatus}
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
