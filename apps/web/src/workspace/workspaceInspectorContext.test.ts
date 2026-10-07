@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { DraftId } from "../composerDraftStore";
 import { shouldUseRightPanelSheetForRowWidth } from "../rightPanelLayout";
 import { createPaneLeaf, splitPane, type PaneTab } from "./paneTree";
-import { paneServerThreadKeys } from "./workspaceInspector";
+import { paneServerThreadKeys } from "./workspaceInspectorContext";
 
 const threadRef = (id: string) => scopeThreadRef("env-1" as EnvironmentId, ThreadId.make(id));
 const thread = (id: string): PaneTab => ({ kind: "server", threadRef: threadRef(id) });
