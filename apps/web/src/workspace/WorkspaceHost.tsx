@@ -27,7 +27,7 @@ import { PaneView } from "./PaneView";
 import { type RouteSyncState, planRouteSync } from "./routeSync";
 import { useWorkspaceShortcuts } from "./useWorkspaceShortcuts";
 import { WorkspaceInspector } from "./WorkspaceInspector";
-import { WorkspaceInspectorProvider, type WorkspaceInspectorValue } from "./workspaceInspector";
+import { WorkspaceInspectorProvider, type WorkspaceInspectorValue } from "./workspaceInspectorContext";
 import { WORKSPACE_QUICK_RATIO, useWorkspaceMotion } from "./workspaceMotion";
 import { selectActiveWorkspace, selectFocusedTab, useWorkspaceStore } from "./workspaceStore";
 import {

@@ -486,7 +486,7 @@ import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { takeDirectPaneFocus, usePaneContext } from "../workspace/paneContext";
-import { paneServerThreadKeys, useWorkspaceInspector } from "../workspace/workspaceInspector";
+import { paneServerThreadKeys, useWorkspaceInspector } from "../workspace/workspaceInspectorContext";
 import { selectActiveWorkspace, useWorkspaceStore } from "../workspace/workspaceStore";
 import {
   awaitAttachmentUploads,
