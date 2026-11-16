@@ -1,8 +1,8 @@
-import { defineConfig } from './.vybava/config';
+import { defineConfig } from '@vybava/config';
 
 // Shared Výbava configuration for this repository — one section per applet.
 // Evaluated with the helpers shipped by vybava, not a checked-in copy.
-// `vybava config init` generates gitignored .vybava/config.ts editor types.
+// Editors read their types from ~/node_modules/@vybava/config, which vybava keeps current.
 export default defineConfig({
   pr: {
     // prm / gitkit settings for the LEFTEQ fork (keys: ~/.claude/skills/prm/references/config.md).
